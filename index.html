@@ -76,7 +76,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <main>
 <div class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many. Add videos separately: your iPhone prepares each video before handing it over, which can take a while for long ones.</span><br><br>
 <div class="row" style="justify-content:center"><label class="btn primary" id="pickbtn">Add photos<input id="files" type="file" accept="image/*" multiple hidden></label><label class="btn" id="pickvid">Add videos<input id="vfiles" type="file" accept="video/*" multiple hidden></label></div></div>
-<div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
+<pre id="dbg" style="white-space:pre-wrap;font:12px/1.4 ui-monospace,monospace;background:#fff8e6;color:#5a3b00;border-radius:10px;padding:8px;max-height:220px;overflow:auto" hidden></pre><div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
@@ -102,7 +102,8 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 {
 const SHORTCUT='Save trip & clean up';
 const $=id=>document.getElementById(id);
-const errBox=m=>{const t=document.getElementById('toast');if(!t)return;t.textContent='Something went wrong: '+m+' (send Claude a screenshot)';t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',12000)};
+const T0=Date.now();const dbg=m=>{try{const d=document.getElementById('dbg');d.hidden=false;d.textContent+=((Date.now()-T0)/1000).toFixed(1)+'s '+m+'\n';d.scrollTop=1e9}catch(e){}};
+const errBox=m=>{dbg('ERROR '+m);const t=document.getElementById('toast');if(!t)return;t.textContent='Something went wrong: '+m+' (send Claude a screenshot)';t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',12000)};
 window.addEventListener('error',e=>errBox(e.message||'unknown'));window.addEventListener('unhandledrejection',e=>errBox((e.reason&&e.reason.message)||String(e.reason)));
 let places=[],homeC=null,named=[],myHome=null,photos=[],trips=[],deck=[],di=0,hist=[],gid=1;
 const byKey=new Map(),byId=new Map();
@@ -211,7 +212,7 @@ const ham=(a,b)=>{let n=0;for(let i=0;i<64;i++)if(a[i]!==b[i])n++;return n};
 const km=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742*Math.asin(Math.sqrt(x))};
 
 const onPick=async e=>{
-  const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
+  const fs=[...(e.target.files||[])];dbg(`change on ${e.target.id}: ${fs.length} file(s) `+fs.slice(0,3).map(f=>`${f.name} ${f.type||'no-type'} ${Math.round(f.size/1024)}KB`).join(' | '));if(!fs.length)return;e.target.value='';
   $('prog').hidden=false;$('progt').textContent=`Reading ${fs.length} item${fs.length===1?'':'s'}…`;$('progb').style.width='2%';poolErr=null;let done=0;const fresh=[],again=[];
   await pool(fs,8,async f=>{
     const isV=/^video\//.test(f.type)||/\.(mov|mp4|m4v|3gp)$/i.test(f.name),isJ=!isV&&(f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name));let ex={},buf=null;
@@ -227,12 +228,14 @@ const onPick=async e=>{
     if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
   });
   if(poolErr&&!fresh.length&&!again.length){$('prog').hidden=true;errBox(poolErr.message||String(poolErr));return}
+  dbg(`read done: ${fresh.length} new, ${again.length} already here${poolErr?', error: '+(poolErr.message||poolErr):''}`);
   photos.sort((a,b)=>a.date-b.date);
   const before=new Map(trips.map(t=>[t,t.list.length]));
   if(fresh.length)placeNew(fresh);else tidy();
   const grew=trips.filter(t=>before.has(t)&&t.list.length>before.get(t)).length,made=trips.filter(t=>!before.has(t)).length;
   toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
     `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
+  dbg(`grouped: ${trips.length} groups`);
   const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
   await pool(todo,4,async p=>{await analyse(p);n++;
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
@@ -240,7 +243,9 @@ const onPick=async e=>{
   $('prog').hidden=true;flag();render();store();
 };
 $('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
-['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
+['files','vfiles'].forEach(id=>{['input','cancel','focus','blur'].forEach(ev=>$(id).addEventListener(ev,()=>dbg(ev+' on '+id)))});
+window.addEventListener('focus',()=>dbg('page focus'));document.addEventListener('visibilitychange',()=>dbg('visible='+!document.hidden));
+['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{dbg('tap '+id);$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
 const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
 function flag(){
   photos.forEach(p=>p.why=[]);
