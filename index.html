@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Photo Sorter">
 <title>Photo Sorter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
@@ -40,7 +40,7 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid va
 .strip img.sel{outline:3px solid var(--coral);outline-offset:-3px}
 select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 10px;max-width:100%}
 .tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;background:var(--bg);padding:8px 0;margin-bottom:6px}.tabs button{flex:1;justify-content:center}.tabs button[aria-selected=true]{background:var(--sea);color:#fff;border-color:var(--sea)}
-#wrong{display:none;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}#wrong.on{display:flex}
+#wrong{display:none;gap:8px;flex-wrap:wrap;justify-content:center}#wrong.on{display:flex}
 .send{margin-top:12px;padding:12px;border-radius:12px;background:light-dark(#eef6f7,#0f2f35);display:grid;gap:8px}
 #movebar{position:fixed;left:0;right:0;bottom:0;background:var(--sea);color:#fff;padding:10px max(4vw,14px) calc(10px + env(safe-area-inset-bottom));display:none;gap:8px;flex-wrap:wrap;align-items:center;z-index:8}
 #movebar.on{display:flex}
@@ -49,15 +49,23 @@ select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px 
 .done{color:var(--keep);font-weight:600}
 .settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
 .settings label{font-size:14px;color:var(--mute)}.settings input{display:block;width:100%;font:16px Outfit,system-ui;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 10px}
-#deck{position:fixed;inset:0;background:#051418;display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;z-index:9;color:#fff}
+#deck{position:fixed;inset:0;background:#000;display:none;z-index:9;color:#fff;overflow:hidden}
+.dtop,.dbot{position:absolute;left:0;right:0;z-index:2;padding:10px 12px;pointer-events:none}.dtop *,.dbot *{pointer-events:auto}
+.dtop{top:0;padding-top:max(10px,env(safe-area-inset-top));background:linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,0))}
+.dtop .row{display:flex;gap:8px;align-items:center;margin:0}.dtop select{flex:1;min-width:0;margin:0}
+#deckt{margin-top:6px;font-size:13px;color:#e6f3f1;text-shadow:0 1px 3px #000}
+.dbot{bottom:0;padding-bottom:max(14px,env(safe-area-inset-bottom));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.8));display:flex;flex-direction:column;align-items:center;gap:10px}
+.dbot .small{display:flex;gap:10px}.dbot .small button{background:rgba(255,255,255,.18);color:#fff;border:0;min-height:40px;backdrop-filter:blur(6px)}
+#deck .bigimg{opacity:0;transition:opacity .15s}#deck .bigimg.ok{opacity:1}
 #deck.on{display:flex}
-.cardwrap{position:relative;width:min(88vw,420px);height:min(50vh,520px)}
-.sw{position:absolute;inset:0;border-radius:20px;overflow:hidden;background:#000;touch-action:none;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+.cardwrap{position:absolute;inset:0}
+.sw{position:absolute;inset:0;overflow:hidden;background:#000;touch-action:none}
+.sw img{position:absolute;inset:0}
 .sw img{width:100%;height:100%;object-fit:contain;pointer-events:none}
-.sw .why{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.6);padding:4px 10px;border-radius:99px;font-size:14px}
-.stamp{position:absolute;top:18px;font:700 26px Outfit;padding:2px 12px;border:3px solid;border-radius:8px;opacity:0}
+.sw .why{position:absolute;left:12px;top:calc(max(10px,env(safe-area-inset-top)) + 100px);background:rgba(0,0,0,.6);padding:4px 10px;border-radius:99px;font-size:14px}
+.stamp{position:absolute;top:40%;font:700 26px Outfit;padding:2px 12px;border:3px solid;border-radius:8px;opacity:0}
 .stamp.k{left:16px;color:var(--keep)}.stamp.d{right:16px;color:var(--coral)}
-.deckbtns{display:flex;gap:12px;margin-top:16px}.deckbtns button{min-width:96px;justify-content:center}
+.deckbtns{display:flex;gap:14px}.deckbtns button{min-width:130px;min-height:52px;justify-content:center;font-size:18px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
 .del-b{background:var(--coral);color:#fff;border:0}.keep-b{background:var(--keep);color:#fff;border:0}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;z-index:10}
 @media (prefers-reduced-motion:no-preference){.sw{transition:transform .25s}.sw.drag{transition:none}}
@@ -83,20 +91,18 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 9</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 10</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
 <div id="trips"></div>
 </main>
 <div id="deck" role="dialog" aria-label="Review photos">
-<select id="scope" aria-label="What to review" style="margin-bottom:8px"></select>
-<div class="mute" id="deckt" style="color:#cfe"></div>
 <div class="cardwrap" id="cw"></div>
-<div class="deckbtns"><button class="del-b" id="bdel">Delete</button><button id="bundo">Undo</button><button class="keep-b" id="bkeep">Keep</button></div>
-<button id="bwrong" style="margin-top:10px">Wrong group</button>
-<div id="wrong"><select id="wrongto" aria-label="Move this photo to"></select></div>
-<button id="bclose" style="margin-top:14px">Done</button>
+<div class="dtop"><div class="row"><select id="scope" aria-label="What to review"></select><button id="bclose">Done</button></div><div id="deckt"></div></div>
+<div class="dbot"><div id="wrong"><select id="wrongto" aria-label="Move this photo to"></select></div>
+<div class="small"><button id="bundo">Undo</button><button id="bwrong">Wrong group</button></div>
+<div class="deckbtns"><button class="del-b" id="bdel">Delete</button><button class="keep-b" id="bkeep">Keep</button></div></div>
 </div>
 <div id="movebar"><b id="movet"></b><select id="moveto" aria-label="Move to group"></select><button id="moveout">Not in this group</button><button id="movenew">New group</button><button id="movex">Cancel</button></div>
 <div id="toast"></div>
@@ -113,12 +119,12 @@ const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clear
 try{myHome=JSON.parse(localStorage.getItem('ts-home')||'null');named=JSON.parse(localStorage.getItem('ts-places')||'[]')}catch(e){}
 
 /* ---- storage on this phone (IndexedDB): groups, decisions, small previews. Photos themselves are never copied. ---- */
-const DB=new Promise((res,rej)=>{try{const r=indexedDB.open('photo-sorter',1);r.onupgradeneeded=()=>{r.result.createObjectStore('photos',{keyPath:'key'});r.result.createObjectStore('kv')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});
+const DB=new Promise((res,rej)=>{try{const r=indexedDB.open('photo-sorter',2);r.onupgradeneeded=()=>{const d=r.result,h=n=>d.objectStoreNames.contains(n);if(!h('photos'))d.createObjectStore('photos',{keyPath:'key'});if(!h('kv'))d.createObjectStore('kv');if(!h('big'))d.createObjectStore('big')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});
 DB.catch(()=>{});
 async function tx(store,mode,fn){const db=await DB;return new Promise((res,rej)=>{const t=db.transaction(store,mode);const q=fn(t.objectStore(store));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})}
 const dirty=new Set();let svT=null;
 const touch=(...ps)=>ps.forEach(p=>dirty.add(p));
-const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null,video:!!p.video,dur:p.dur||0});
+const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null,video:!!p.video,dur:p.dur||0,big:!!p.big});
 function store(){clearTimeout(svT);svT=setTimeout(flush,250)}
 async function flush(){clearTimeout(svT);const ps=[...dirty];dirty.clear();
   try{if(ps.length)await tx('photos','readwrite',s=>{ps.forEach(p=>s.put(rec(p)))});
@@ -193,6 +199,16 @@ const BLANK='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICT
 const mmss=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
 const parseD=s=>{const m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):null};
 
+/* ---- sharp previews for Review, kept on this phone so Review stays sharp after the app is closed ---- */
+async function mkBig(p){if(p.video||p.big||!p.file)return;const bm=await createImageBitmap(p.file);const k=Math.min(1,1600/Math.max(bm.width,bm.height));
+  const c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);bm.close&&bm.close();
+  const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.8));c.width=c.height=0;if(!b)return;await tx('big','readwrite',s=>s.put(b,p.key));p.big=true;touch(p)}
+const bigCache=new Map();
+async function bigSrc(p){if(!p||p.video)return null;if(bigCache.has(p.key))return bigCache.get(p.key);let u=null;
+  if(p.file)u=URL.createObjectURL(p.file);else if(p.big){try{const b=await tx('big','readonly',s=>s.get(p.key));if(b)u=URL.createObjectURL(b)}catch(e){}}
+  if(u){bigCache.set(p.key,u);const keep=new Set([di-1,di,di+1,di+2].map(i=>deck[i]&&deck[i].key));for(const[k,v]of bigCache)if(!keep.has(k)){URL.revokeObjectURL(v);bigCache.delete(k)}}
+  return u}
+const preload=p=>bigSrc(p).then(u=>{if(u){const im=new Image();im.src=u;im.decode&&im.decode().catch(()=>{})}});
 /* ---- image analysis (background, on the small preview built into each photo) ---- */
 async function analyse(p){
   if(p.video){if(!p.thumbBlob&&p.file){const b=await vthumb(p);if(b){p.thumbBlob=b;p.thumb=URL.createObjectURL(b)}}p.hash=p.hash||'v';touch(p);return}
@@ -244,7 +260,9 @@ const onPick=async e=>{
   const step=async p=>{await analyse(p);n++;
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
     if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}};
-  await pool(quick,4,step);await pool(slow,1,step);
+  await pool(quick,4,step);await pool(slow,1,step);flag();
+  const bigs=[...fresh,...again].filter(p=>!p.video&&!p.big&&p.file).sort((a,b)=>(b.why.length>0)-(a.why.length>0));let m=0;
+  await pool(bigs,1,async p=>{await mkBig(p);m++;if(m%10===0||m===bigs.length){$('progt').textContent=`Making sharp copies for Review: ${m} of ${bigs.length}`;$('progb').style.width=(m/bigs.length*100)+'%'}});
   $('prog').hidden=true;flag();render();store();
 };
 $('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
@@ -385,7 +403,7 @@ $('movenew').onclick=()=>{const first=[...sel].sort((a,b)=>a.date-b.date)[0];con
 $('moveout').onclick=()=>{let u=trips.find(t=>t.name==='Unsorted'&&state(t)!=='done');if(!u){u={id:gid++,kind:'home',list:[],name:'Unsorted',custom:true};trips.push(u)}moveSel(u);toast('Moved to "Unsorted". Move them to the right group from there.')};
 $('movex').onclick=()=>{sel.clear();bar();render()};
 $('trips').addEventListener('input',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];t.name=e.target.value;t.custom=true}});
-function mark(kind,list){const now=Date.now();list.forEach(p=>{if(kind==='save')p.saved=now;else p.gone=now});touch(...list);flush();
+function mark(kind,list){const now=Date.now();list.forEach(p=>{if(kind==='save')p.saved=now;else p.gone=now});if(kind!=='save'){const ks=list.filter(p=>p.big).map(p=>p.key);if(ks.length)tx('big','readwrite',s=>ks.forEach(k=>s.delete(k))).catch(()=>{})}touch(...list);flush();
   setTimeout(()=>{render();toast(kind==='save'?`Marked ${list.length} photo${list.length===1?'':'s'} as saved. If the Shortcut failed, tap "Mark as not saved".`:`Marked ${list.length} photo${list.length===1?'':'s'} as removed from your phone.`)},400)}
 $('trips').addEventListener('click',e=>{
   const a=e.target.closest('a[data-act]');
@@ -450,12 +468,11 @@ function openDeck(sc){const need=needCount(),open=trips.map((t,i)=>[t,i]).filter
   $('scope').value=sc;deck=sc==='need'?trips.flatMap(t=>t.list.filter(p=>needs(p,t))):trips[+sc.slice(1)].list.filter(p=>!p.gone);
   di=0;hist=[];$('deck').classList.add('on');show()}
 $('scope').onchange=e=>openDeck(e.target.value);
-let bigU=null;const bigURL=p=>{if(bigU)URL.revokeObjectURL(bigU);bigU=null;if(!p.file)return p.thumb||'';bigU=URL.createObjectURL(p.file);return bigU};
 function show(){
   $('wrong').classList.remove('on');
-  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file?'':' · small preview (add the photos again for a sharp view)'):'All done here. Pick another set above, or tap Done.';
-  $('cw').innerHTML=p?`<div class="sw" id="sw">${p.video&&p.file?`<video src="${bigURL(p)}" controls playsinline muted preload="metadata"></video>`:`<img src="${p.video?p.thumb||'':bigURL(p)}" alt="Photo to review" style="${p.file&&!p.video?'':`transform:${ROT[p.rot]||'none'}`}">`}<span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
-  if(p)drag($('sw'));
+  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file||p.big||p.video?'':' · small preview only (add this photo again for a sharp view)'):'All done here. Pick another set above, or tap Done.';
+  $('cw').innerHTML=p?`<div class="sw" id="sw">${p.video&&p.file?`<video src="${URL.createObjectURL(p.file)}" controls playsinline muted preload="metadata"></video>`:`<img src="${p.thumb||BLANK}" alt="" style="transform:${ROT[p.rot]||'none'}">${p.video?'':`<img class="bigimg" alt="Photo to review">`}`}<span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
+  if(p){drag($('sw'));const me=di;bigSrc(p).then(u=>{const im=document.querySelector('#sw .bigimg');if(!u||me!==di||!im)return;im.onload=()=>im.classList.add('ok');im.src=u});preload(deck[di+1]);preload(deck[di+2])}
   $('bwrong').textContent=g&&g.name==='Unsorted'?'Move to group':'Wrong group';if(g&&g.name==='Unsorted')$('bwrong').click();
 }
 function decide(v){const p=deck[di];if(!p)return;p.dec=v;touch(p);store();hist.push(di);
