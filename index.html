@@ -56,19 +56,31 @@ select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px 
 .del-b{background:var(--coral);color:#fff;border:0}.keep-b{background:var(--keep);color:#fff;border:0}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;z-index:10}
 @media (prefers-reduced-motion:no-preference){.sw{transition:transform .25s}.sw.drag{transition:none}}
+.pick.slim{padding:14px 18px;text-align:left;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}.pick.slim strong{display:none}.pick.slim br{display:none}.pick.slim .mute{order:3;flex-basis:100%}
+.welcome{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;margin:8px 0 4px}
+.chip{min-height:38px;border-radius:99px;font-size:15px}
+.st{display:inline-block;font-size:14px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--line)}
+.st.todo{background:light-dark(#fff1ec,#3a211b);color:light-dark(#b23a1f,#ffb09d)}.st.ok{background:light-dark(#e3f4ee,#123a2c);color:light-dark(#11704b,#8fe0bd)}
+.stline{margin-top:6px}
+h2.sec,summary.sec{font-size:15px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:22px 0 0}
+summary.sec{cursor:pointer;min-height:44px;display:flex;align-items:center}
+.trip.bin{border:2px solid var(--coral)}.trip.bin .h{font-size:20px}
+.trip.done-g{opacity:.8}
+.strip img.sv{box-shadow:inset 0 -4px 0 var(--keep)}
+button.link{border:0;background:none;color:var(--mute);text-decoration:underline;padding:0 6px}
 </style></head><body>
 <header><h1>Photo Sorter</h1><p>Pick photos, see them grouped into trips, swipe through the ones that need a look, then save each trip to your drive.</p></header>
 <main>
-<label class="pick" id="pick"><strong>Choose photos</strong><span class="mute">Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary">Choose photos</span><input id="files" type="file" accept="image/*" multiple></label>
+<label class="pick" id="pick"><strong id="picktitle">Choose photos</strong><span class="mute">Your groups stay saved on this phone. Adding more photos never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary" id="pickbtn">Choose photos</span><input id="files" type="file" accept="image/*" multiple></label>
 <div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button></div></details>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
-<div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then tap "Not in this group" or pick where it belongs. Use "Merge into…" to combine whole groups.</div>
+<div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
 <div id="trips"></div>
 </main>
 <div id="deck" role="dialog" aria-label="Review photos">
@@ -86,13 +98,35 @@ select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px 
 {
 const SHORTCUT='Save trip & clean up';
 const $=id=>document.getElementById(id);
-let places=[],homeC=null,named=[],myHome=null,photos=[],trips=[],deck=[],di=0,hist=[],curTrip=null;
+let places=[],homeC=null,named=[],myHome=null,photos=[],trips=[],deck=[],di=0,hist=[],gid=1;
+const byKey=new Map(),byId=new Map();
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500)};
-let saved={};try{saved=JSON.parse(localStorage.getItem('ts-dec')||'{}')}catch(e){}
+const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4000)};
 try{myHome=JSON.parse(localStorage.getItem('ts-home')||'null');named=JSON.parse(localStorage.getItem('ts-places')||'[]')}catch(e){}
-const keyOf=p=>p.name+'|'+p.size;
-const persist=()=>{try{localStorage.setItem('ts-dec',JSON.stringify(saved))}catch(e){}};
+
+/* ---- storage on this phone (IndexedDB): groups, decisions, small previews. Photos themselves are never copied. ---- */
+const DB=new Promise((res,rej)=>{try{const r=indexedDB.open('photo-sorter',1);r.onupgradeneeded=()=>{r.result.createObjectStore('photos',{keyPath:'key'});r.result.createObjectStore('kv')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});
+DB.catch(()=>{});
+async function tx(store,mode,fn){const db=await DB;return new Promise((res,rej)=>{const t=db.transaction(store,mode);const q=fn(t.objectStore(store));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})}
+const dirty=new Set();let svT=null;
+const touch=(...ps)=>ps.forEach(p=>dirty.add(p));
+const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null});
+function store(){clearTimeout(svT);svT=setTimeout(flush,250)}
+async function flush(){clearTimeout(svT);const ps=[...dirty];dirty.clear();
+  try{if(ps.length)await tx('photos','readwrite',s=>{ps.forEach(p=>s.put(rec(p)))});
+    await tx('kv','readwrite',s=>s.put(trips.map(t=>({id:t.id,name:t.name,kind:t.kind,custom:!!t.custom,keys:t.list.map(p=>p.key)})),'groups'))}catch(e){console.warn('save failed',e)}}
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
+async function load(){
+  try{const [recs,gs]=await Promise.all([tx('photos','readonly',s=>s.getAll()),tx('kv','readonly',s=>s.get('groups'))]);
+    for(const r of recs||[]){const p={...r,id:nid++,date:new Date(r.date),why:[],thumbBlob:r.thumb||null};delete p.thumb;if(p.thumbBlob)p.thumb=URL.createObjectURL(p.thumbBlob);add(p)}
+    trips=(gs||[]).map(g=>({id:g.id,name:g.name,kind:g.kind,custom:g.custom,list:g.keys.map(k=>byKey.get(k)).filter(Boolean)})).filter(t=>t.list.length);
+    gid=Math.max(0,...trips.map(t=>t.id||0))+1;trips.forEach(t=>{if(!t.id)t.id=gid++});
+  }catch(e){console.warn('load failed',e)}
+  if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
+  photos.sort((a,b)=>a.date-b.date);if(photos.length){homeOf();flag()}tidy(true);
+}
+let nid=0;
+function add(p){photos.push(p);byKey.set(p.key,p);byId.set(p.id,p)}
 
 /* ---- EXIF (JPEG) ---- */
 function exif(buf){
@@ -114,41 +148,49 @@ function tiff(v,t){
 }
 const parseD=s=>{const m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):null};
 
-/* ---- image analysis (runs in the background, on the small preview built into each photo) ---- */
+/* ---- image analysis (background, on the small preview built into each photo) ---- */
 async function analyse(p){
   let bm;
   if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else bm=await createImageBitmap(p.file);
   if(!p.thumbBlob){const t=document.createElement('canvas');t.width=t.height=160;const s=Math.min(bm.width,bm.height);t.getContext('2d').drawImage(bm,(bm.width-s)/2,(bm.height-s)/2,s,s,0,0,160,160);
-    p.thumb=await new Promise(r=>t.toBlob(x=>r(URL.createObjectURL(x)),'image/jpeg',.7));p.rot=0}
+    p.thumbBlob=await new Promise(r=>t.toBlob(r,'image/jpeg',.7));p.thumb=URL.createObjectURL(p.thumbBlob);p.rot=0}
   const c=document.createElement('canvas');c.width=c.height=96;const bx=c.getContext('2d',{willReadFrequently:true});bx.imageSmoothingQuality='high';bx.drawImage(bm,0,0,96,96);
   const g=document.createElement('canvas');g.width=9;g.height=8;const gx=g.getContext('2d',{willReadFrequently:true});gx.imageSmoothingQuality='high';gx.drawImage(c,0,0,9,8);
   const d=gx.getImageData(0,0,9,8).data;let hash='';for(let y=0;y<8;y++)for(let i=0;i<8;i++){const a=(y*9+i)*4,b=a+4;hash+=(d[a]+d[a+1]+d[a+2])>(d[b]+d[b+1]+d[b+2])?'1':'0'}
   const px=bx.getImageData(0,0,96,96).data,gr=new Float32Array(96*96);for(let i=0;i<gr.length;i++)gr[i]=px[i*4]*.3+px[i*4+1]*.59+px[i*4+2]*.11;
   let sum=0,sq=0,n=0;for(let y=1;y<95;y++)for(let i=1;i<95;i++){const k=y*96+i,l=gr[k-1]+gr[k+1]+gr[k-96]+gr[k+96]-4*gr[k];sum+=l;sq+=l*l;n++}
-  bm.close&&bm.close();p.hash=hash;p.sharp=sq/n-(sum/n)**2;
+  bm.close&&bm.close();p.hash=hash;p.sharp=sq/n-(sum/n)**2;touch(p);
 }
 async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k],k)}catch(e){}}}))}
 const ham=(a,b)=>{let n=0;for(let i=0;i<64;i++)if(a[i]!==b[i])n++;return n};
 const km=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742*Math.asin(Math.sqrt(x))};
 
-let nextId=0,busy=false;
 $('files').addEventListener('change',async e=>{
   const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
-  $('prog').hidden=false;let done=0;const fresh=[];
+  $('prog').hidden=false;let done=0;const fresh=[],again=[];
   await pool(fs,8,async f=>{
     const isJ=f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name);let ex={},buf=null;
     if(isJ){buf=await f.slice(0,131072).arrayBuffer();ex=exif(buf)}
-    const p={id:nextId++,file:f,name:f.name,size:f.size,date:parseD(ex.date)||new Date(f.lastModified),lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0};
-    if(ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
-    p.dec=saved[keyOf(p)]||null;photos.push(p);fresh.push(p);
+    const date=parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
+    const old=byKey.get(key);
+    if(old){old.file=f;again.push(old)}
+    else{
+      const p={id:nid++,key,file:f,name:f.name,date,lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0,dec:null,saved:0,gone:0};
+      if(ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
+      add(p);fresh.push(p);touch(p)}
     if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
   });
-  group();
-  let n=0;$('progt').textContent='Groups are ready. Checking for blurry and similar photos in the background…';
-  await pool(fresh,4,async p=>{await analyse(p);n++;
-    if(!p.thumbBlob){const im=document.querySelector(`img[data-id="${p.id}"]`);if(im){im.src=p.thumb;im.style.transform=''}}
-    if(n%20===0||n===fresh.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${fresh.length}`;$('progb').style.width=(n/fresh.length*100)+'%'}});
-  $('prog').hidden=true;flag();render();
+  photos.sort((a,b)=>a.date-b.date);
+  const before=new Map(trips.map(t=>[t,t.list.length]));
+  if(fresh.length)placeNew(fresh);else tidy();
+  const grew=trips.filter(t=>before.has(t)&&t.list.length>before.get(t)).length,made=trips.filter(t=>!before.has(t)).length;
+  toast(!fresh.length?`All ${again.length} of these photos were already here. Your groups are unchanged.`:
+    `Added ${fresh.length} new photo${fresh.length===1?'':'s'}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
+  const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Checking for blurry and similar photos in the background…';
+  await pool(todo,4,async p=>{await analyse(p);n++;
+    const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
+    if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}});
+  $('prog').hidden=true;flag();render();store();
 });
 const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
 function flag(){
@@ -159,58 +201,101 @@ function flag(){
     if(p.hash)for(let j=i-1;j>=0&&p.date-photos[j].date<600000;j--){const q=photos[j];if(q.hash&&ham(p.hash,q.hash)<=6){const lose=p.sharp<q.sharp?p:q;if(!lose.why.includes('Similar to another'))lose.why.push('Similar to another');break}}
   }
 }
-function group(){
-  photos.sort((a,b)=>a.date-b.date);flag();
-  const miles=+$('miles').value||5,gapH=+$('gap').value||72,lim=miles*1.609;
-  places=[];photos.filter(p=>p.lat!=null).forEach(p=>{let c=places.find(c=>km(c.lat,c.lon,p.lat,p.lon)<5);if(!c){c={lat:p.lat,lon:p.lon,list:[]};places.push(c)}c.list.push(p)});
+function homeOf(){
+  places=[];photos.filter(p=>p.lat!=null&&!p.gone).forEach(p=>{let c=places.find(c=>km(c.lat,c.lon,p.lat,p.lon)<5);if(!c){c={lat:p.lat,lon:p.lon,list:[]};places.push(c)}c.list.push(p)});
   places.sort((a,b)=>b.list.length-a.list.length);
-  const home=myHome||(places[0]?{lat:places[0].lat,lon:places[0].lon}:null);
-  homeC=home;renderHome(home);
-  const anyGps=!!home;trips=[];let cur=null,last=null;
-  for(const p of photos){
+  const home=myHome||(places[0]?{lat:places[0].lat,lon:places[0].lon}:null);homeC=home;renderHome(home);return home}
+function classify(list,home){
+  const lim=(+$('miles').value||5)*1.609,anyGps=!!home;let last=null;
+  for(const p of list){
     const away=home&&p.lat!=null?km(home.lat,home.lon,p.lat,p.lon)>lim:null;
     p.dist=away!=null?km(home.lat,home.lon,p.lat,p.lon)/1.609:null;
-    p.kind=!anyGps?'trip':away===null?(last?last.kind:'home'):(away?'trip':'home');last=p;
+    p.kind=!anyGps?'trip':away===null?(last?last.kind:'home'):(away?'trip':'home');last=p;touch(p);
   }
   // occasions: busy days near home (a day runs 4am to 4am so late parties stay together)
-  const occN=+$('occ').value||15,dayOf=p=>{const d=new Date(p.date-4*3600000);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()},cnt={};
-  photos.forEach(p=>{if(p.kind==='home'){const k=dayOf(p);cnt[k]=(cnt[k]||0)+1}});
-  photos.forEach(p=>{if(p.kind==='home'&&cnt[dayOf(p)]>=occN)p.kind='occasion'});
-  last=null;
-  for(const p of photos){const kind=p.kind;
-    const month=p.date.getFullYear()+'-'+p.date.getMonth();
-    const gap=last?(p.date-last.date)/3600000:0;
-    if(!cur||cur.kind!==kind||(kind==='trip'&&gap>gapH)||(kind==='occasion'&&gap>30)||(kind==='home'&&cur.month!==month)){cur={kind,month,list:[]};trips.push(cur)}
-    cur.list.push(p);last=p;
-  }
-  trips.forEach(t=>{t.start=t.list[0].date;t.end=t.list[t.list.length-1].date;const ds=t.list.map(p=>p.dist).filter(x=>x!=null);t.far=ds.length?Math.max(...ds):null;
-    t.name=t.name||defName(t)});
-  for(const n of named){if(!photos.some(p=>p.lat!=null&&km(n.lat,n.lon,p.lat,p.lon)<.5))continue;
-    const t={kind:'occasion',list:[],name:n.name,custom:true};trips.push(t);absorb(t,n);fix(t);t.kind=t.list[0].kind;trips=trips.filter(t=>t.list.length)}
-  trips.forEach(t=>{if(!t.custom)t.name=defName(t)});trips.sort((a,b)=>a.start-b.start);
-  $('summary').textContent=photos.length?`${photos.length} photos, ${(n=>n+(n===1?' trip':' trips'))(trips.filter(t=>t.kind==='trip').length)}.`+(anyGps?'':' These photos had no location, so they are grouped by date only.')+((n=>n&&n<photos.length?` ${photos.length-n} of ${photos.length} photos had no location, so they were placed by date.`:'')(photos.filter(p=>p.lat!=null).length)):'';
-  $('hint').hidden=$('tabs').hidden=!photos.length;render();
+  const occN=+$('occ').value||15,cnt={};
+  list.forEach(p=>{if(p.kind==='home'){const k=dayOf(p);cnt[k]=(cnt[k]||0)+1}});
+  list.forEach(p=>{if(p.kind==='home'&&cnt[dayOf(p)]>=occN)p.kind='occasion'});
 }
+const dayOf=p=>{const d=new Date(p.date-4*3600000);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()};
+const monthOf=d=>d.getFullYear()+'-'+d.getMonth();
+function chunk(list){
+  const gapH=+$('gap').value||72,gs=[];let cur=null,last=null;
+  for(const p of list){const kind=p.kind,month=monthOf(p.date),gap=last?(p.date-last.date)/3600000:0;
+    if(!cur||cur.kind!==kind||(kind==='trip'&&gap>gapH)||(kind==='occasion'&&gap>30)||(kind==='home'&&cur.month!==month)){cur={kind,month,list:[]};gs.push(cur)}
+    cur.list.push(p);last=p}
+  gs.forEach(fix);return gs}
+// new photos join an open group they belong to; everything you already made stays as it is
+function placeNew(fresh){
+  fresh.sort((a,b)=>a.date-b.date);const home=homeOf();classify(fresh,home);
+  const gapMs=(+$('gap').value||72)*3600000;
+  for(const g of chunk(fresh)){
+    const win=g.kind==='trip'?gapMs:g.kind==='occasion'?30*3600000:0;
+    const t=trips.find(t=>t.kind===g.kind&&state(t)!=='done'&&(g.kind==='home'?!t.custom&&monthOf(t.start)===g.month:(g.start-t.end<=win&&t.start-g.end<=win)));
+    if(t)t.list.push(...g.list);else{g.id=gid++;delete g.month;trips.push(g)}
+  }
+  for(const n of named){const m=fresh.filter(p=>p.lat!=null&&km(n.lat,n.lon,p.lat,p.lon)<.5);if(!m.length)continue;
+    let t=trips.find(t=>t.name===n.name&&state(t)!=='done');
+    if(!t){t={id:gid++,kind:m[0].kind,list:[],name:n.name,custom:true};trips.push(t)}
+    const near=fresh.filter(p=>p.lat==null&&m.some(q=>Math.abs(q.date-p.date)<3*3600000)),mv=[...m,...near].filter(p=>!t.list.includes(p));
+    trips.forEach(o=>{if(o!==t)o.list=o.list.filter(p=>!mv.includes(p))});t.list.push(...mv)}
+  flag();tidy();
+}
+// Regroup only reshuffles groups you have not named, saved or touched
+function regroup(){const fixed=trips.filter(t=>t.custom||state(t)!=='new'),free=trips.filter(t=>!fixed.includes(t)).flatMap(t=>t.list);trips=fixed;if(free.length)placeNew(free);else tidy()}
 const defName=t=>t.kind==='home'?'At home, '+t.start.toLocaleDateString(undefined,{month:'short',year:'numeric'}):t.kind==='occasion'?'Occasion, '+range(t.start,t.end):((t.far||0)<50&&t.end-t.start<86400000?'Outing, ':'Trip, ')+range(t.start,t.end);
 const NEXT={home:'occasion',occasion:'trip',trip:'home'};
 const range=(a,b)=>{const o={month:'short',day:'numeric'};const s=a.toLocaleDateString(undefined,o),e=b.toLocaleDateString(undefined,o);return (s===e?s:s+' to '+e)+', '+b.getFullYear()};
 const pad=n=>String(n).padStart(2,'0');
 const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 const stamp=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+const when=ms=>new Date(ms).toLocaleDateString(undefined,{month:'short',day:'numeric'});
+
+/* ---- group status ---- */
+function parts(t){const live=t.list.filter(p=>!p.gone),keep=live.filter(p=>p.dec!=='del'),uns=keep.filter(p=>!p.saved);return{live,keep,uns,bin:live.length-keep.length}}
+function state(t){const{live,keep,uns}=parts(t);return !live.length?'done':!keep.length?'empty':!uns.length?'saved':uns.length<keep.length?'partial':'new'}
+const binList=()=>photos.filter(p=>p.dec==='del'&&!p.gone);
+const needs=(p,t)=>!p.dec&&!p.gone&&(p.why.length>0||t.name==='Unsorted');
+const needCount=()=>trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0);
+
+function card(t,i){
+  const st=state(t),{live,keep,uns,bin}=parts(t),need=t.list.filter(p=>needs(p,t)).length,lastSaved=Math.max(0,...keep.map(p=>p.saved||0));
+  if(st==='done'){const g=Math.max(...t.list.map(p=>p.gone||0));
+    return `<section class="trip done-g"><b>${esc(t.name)}</b><div class="mute">${esc(range(t.start,t.end))} · ${t.list.length} photo${t.list.length===1?'':'s'}</div><div><span class="st ok">Done · saved and removed from phone ${when(g)}</span></div><div class="row"><button data-ungone="${i}">They're still on my phone</button></div></section>`}
+  const badge={new:'<span class="st todo">Not saved yet</span>',partial:`<span class="st todo">${uns.length} new photo${uns.length===1?'':'s'} not saved yet</span>`,
+    saved:`<span class="st ok">Saved to drive ${when(lastSaved)}</span> <span class="mute">Next: Delete trip to free up space</span>`,empty:'<span class="st">Every photo is in To delete</span>'}[st];
+  const saveLbl=st==='partial'?`Save ${uns.length} new`:'Save trip';
+  const show=live.filter(p=>p.dec!=='del');
+  return `<section class="trip ${t.kind}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
+  <div class="mute">${esc(range(t.start,t.end))} · ${keep.length} photo${keep.length===1?'':'s'}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${bin?` · ${bin} in To delete`:''}</div>
+  <div class="stline">${badge}</div>
+  <div class="strip">${show.map(p=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" class="${sel.has(p)?'sel':''} ${p.saved?'sv':''}">`).join('')}</div>
+  <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'&&!t.custom?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
+  <div class="row">
+  ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,uns))}">${saveLbl}</a>`:''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,live))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
+  <button data-all="${i}">Look through all</button>
+  ${trips.length>1?`<select data-into="${i}" aria-label="Merge into"><option value="">Merge into…</option>${trips.map((o,k)=>k===i||state(o)==='done'?'':`<option value="${k}">${esc(o.name)}</option>`).join('')}</select>`:''}
+  <button data-flip="${i}">Make it ${NEXT[t.kind]==='home'?'home':'a'+(NEXT[t.kind]==='occasion'?'n occasion':' trip')}</button>
+  ${t.list.length>1?`<button data-split="${i}">Split in half</button>`:''}
+  ${st==='saved'||st==='partial'?`<button class="link" data-unsave="${i}">Mark as not saved</button>`:''}</div>${sendPanel(t,i)}</section>`}
 
 function render(){
-  $('tabR').textContent=`Review (${trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0)})`;
-  $('trips').innerHTML=trips.map((t,i)=>{
-    const need=t.list.filter(p=>needs(p,t)).length,del=t.list.filter(p=>p.dec==='del').length;
-    return `<section class="trip ${t.kind}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
-    <div class="mute">${esc(range(t.start,t.end))} · ${t.list.length} photo${t.list.length===1?'':'s'}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${del?` · ${del} marked to delete`:''}</div>
-    <div class="strip">${t.list.map((p,j)=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" data-p="${j}" class="${p.dec==='del'?'del':''} ${sel.has(p)?'sel':''}">`).join('')}</div>
-    <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
-    <div class="row"><button data-all="${i}">Look through all</button>
-    ${HOSTED?`<a class="btn primary" href="${esc(scURL('Save trip',t,false))}">Save trip</a><a class="btn" style="color:var(--coral)" href="${esc(scURL('Delete trip',t,true))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
-    ${trips.length>1?`<select data-into="${i}" aria-label="Merge into"><option value="">Merge into…</option>${trips.map((o,k)=>k===i?'':`<option value="${k}">${k===i-1?'↑ ':k===i+1?'↓ ':''}${esc(o.name)}</option>`).join('')}</select>`:''}
-    <button data-flip="${i}">Make it ${NEXT[t.kind]==='home'?'home':'a'+(NEXT[t.kind]==='occasion'?'n occasion':' trip')}</button>
-    ${t.list.length>1?`<button data-split="${i}">Split in half</button>`:''}</div>${sendPanel(t,i)}</section>`}).join('');
+  const bins=binList(),need=needCount();
+  $('tabR').textContent=`Review (${need})`;
+  const ix=t=>trips.indexOf(t),by=s=>trips.filter(t=>s.includes(state(t)));
+  const toSave=by(['new','partial']),saved=by(['saved','empty']),done=by(['done']);
+  $('tabs').hidden=$('hint').hidden=!trips.length;
+  $('pick').classList.toggle('slim',trips.length>0);$('picktitle').textContent=trips.length?'Add more photos':'Choose photos';$('pickbtn').textContent=trips.length?'Add more photos':'Choose photos';
+  const chips=[toSave.length&&[`${toSave.length} group${toSave.length===1?'':'s'} to save`,'sec-save'],saved.length&&[`${saved.length} saved, still on phone`,'sec-saved'],bins.length&&[`${bins.length} in To delete`,'sec-bin'],need&&[`${need} to review`,'review']].filter(Boolean);
+  $('summary').innerHTML=!trips.length?'':`<div class="welcome"><b>${chips.length?'Where you left off':'All caught up'}</b>${chips.length?`<div class="row">${chips.map(([l,s])=>`<button class="chip" data-go="${s}">${esc(l)}</button>`).join('')}</div>`:'<div class="mute">Everything is saved and cleaned up. Add more photos any time; your groups stay here.</div>'}</div>`;
+  const binCard=bins.length?`<section class="trip bin" id="sec-bin"><b class="h">To delete (${bins.length})</b><div class="mute">Photos you swiped left, from every group. Tap one to put it back.</div>
+    <div class="strip">${bins.map(p=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="Put back" data-back="${p.id}">`).join('')}</div>
+    <div class="row">${HOSTED?`<a class="btn primary" data-act="bin" href="${esc(scURL('Delete trip','To delete',bins))}">Delete ${bins.length} from phone</a>`:'<span class="mute">Delete these in the Photos app.</span>'}</div></section>`:'';
+  $('trips').innerHTML=binCard+
+    (toSave.length?`<h2 class="sec" id="sec-save">To save (${toSave.length})</h2>`+toSave.map(t=>card(t,ix(t))).join(''):'')+
+    (saved.length?`<h2 class="sec" id="sec-saved">Saved, still on your phone (${saved.length})</h2>`+saved.map(t=>card(t,ix(t))).join(''):'')+
+    (done.length?`<details class="fin"><summary class="sec">Finished (${done.length})</summary>${done.map(t=>card(t,ix(t))).join('')}<div class="row"><button data-clear="1">Clear finished from this list</button></div></details>`:'');
+  store();
 }
 function fix(t){t.list.sort((a,b)=>a.date-b.date);t.start=t.list[0].date;t.end=t.list[t.list.length-1].date;const ds=t.list.map(p=>p.dist).filter(x=>x!=null);t.far=ds.length?Math.max(...ds):null}
 function center(t){const g=t.list.filter(p=>p.lat!=null);if(!g.length)return null;const c={lat:g.reduce((s,p)=>s+p.lat,0)/g.length,lon:g.reduce((s,p)=>s+p.lon,0)/g.length};return g.every(p=>km(c.lat,c.lon,p.lat,p.lon)<1)?c:null}
@@ -218,29 +303,46 @@ function pullIn(t){const c=center(t);if(!c)return 0;if(homeC&&km(homeC.lat,homeC
   named=named.filter(n=>n.name!==t.name&&km(n.lat,n.lon,c.lat,c.lon)>=.5);named.push({name:t.name,lat:c.lat,lon:c.lon});try{localStorage.setItem('ts-places',JSON.stringify(named))}catch(e){}
   return absorb(t,c)}
 function absorb(t,c){let moved=0;
-  for(const gps of [true,false])for(const o of trips){if(o===t)continue;const m=o.list.filter(p=>gps?(p.lat!=null&&km(c.lat,c.lon,p.lat,p.lon)<.5):(p.lat==null&&t.list.some(q=>q.lat!=null&&Math.abs(q.date-p.date)<3*3600000)));if(!m.length)continue;o.list=o.list.filter(p=>!m.includes(p));t.list.push(...m);moved+=m.length}
+  for(const gps of [true,false])for(const o of trips){if(o===t||state(o)==='done')continue;const m=o.list.filter(p=>!p.gone&&(gps?(p.lat!=null&&km(c.lat,c.lon,p.lat,p.lon)<.5):(p.lat==null&&t.list.some(q=>q.lat!=null&&Math.abs(q.date-p.date)<3*3600000))));if(!m.length)continue;o.list=o.list.filter(p=>!m.includes(p));t.list.push(...m);moved+=m.length}
   return moved}
 function tidy(){trips=trips.filter(t=>t.list.length);trips.forEach(t=>{fix(t);if(!t.custom)t.name=defName(t)});trips.sort((a,b)=>a.start-b.start);render()}
 const sel=new Set();
-function bar(){$('movebar').classList.toggle('on',sel.size>0);$('movet').textContent=`${sel.size} selected · move to`;$('moveto').innerHTML='<option value="">Choose a group…</option>'+trips.map((o,k)=>`<option value="${k}">${esc(o.name)}</option>`).join('')}
+function bar(){$('movebar').classList.toggle('on',sel.size>0);$('movet').textContent=`${sel.size} selected · move to`;$('moveto').innerHTML='<option value="">Choose a group…</option>'+trips.map((o,k)=>state(o)==='done'?'':`<option value="${k}">${esc(o.name)}</option>`).join('')}
 function moveSel(target){trips.forEach(t=>t.list=t.list.filter(p=>!sel.has(p)));target.list.push(...sel);sel.clear();bar();tidy()}
-$('trips').addEventListener('change',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];if(!t.name.trim())return;const n=pullIn(t);if(n){toast(`Moved ${n} photo${n===1?'':'s'} from the same place into "${t.name}". This place will be remembered.`);tidy()}else if(!center(t))toast('This group covers several places, so nothing else was pulled in.');return}
+$('trips').addEventListener('change',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];if(!t.name.trim())return;
+    const twin=trips.find(o=>o!==t&&o.name.trim().toLowerCase()===t.name.trim().toLowerCase()&&state(o)!=='done');
+    const n=pullIn(t);
+    if(twin)toast(`"${t.name}" is also the name of another group. Both save into the same Trips/${t.name} folder on the drive. Use "Merge into…" if you want them as one group here.`);
+    else if(n){toast(`Moved ${n} photo${n===1?'':'s'} from the same place into "${t.name}". This place will be remembered.`)}
+    else if(!center(t))toast('Name saved. This group covers several places, so nothing else was pulled in.');
+    tidy();return}
   const s=e.target.closest('[data-into]');if(!s||s.value==='')return;const a=trips[+s.dataset.into],t=trips[+s.value];t.list.push(...a.list);a.list=[];toast(`Merged into "${t.name}"`);tidy()});
 $('moveto').onchange=e=>{if(e.target.value!=='')moveSel(trips[+e.target.value])};
-$('movenew').onclick=()=>{const first=[...sel].sort((a,b)=>a.date-b.date)[0];const t={kind:first.kind||'trip',list:[]};trips.push(t);t.list=[first];fix(t);t.name=defName(t);t.list=[];moveSel(t)};
-$('moveout').onclick=()=>{let u=trips.find(t=>t.name==='Unsorted');if(!u){u={kind:'home',list:[],name:'Unsorted',custom:true};trips.push(u)}moveSel(u);toast('Moved to "Unsorted". Move them to the right group from there.')};
+$('movenew').onclick=()=>{const first=[...sel].sort((a,b)=>a.date-b.date)[0];const t={id:gid++,kind:first.kind||'trip',list:[first]};trips.push(t);fix(t);t.name=defName(t);t.list=[];moveSel(t)};
+$('moveout').onclick=()=>{let u=trips.find(t=>t.name==='Unsorted'&&state(t)!=='done');if(!u){u={id:gid++,kind:'home',list:[],name:'Unsorted',custom:true};trips.push(u)}moveSel(u);toast('Moved to "Unsorted". Move them to the right group from there.')};
 $('movex').onclick=()=>{sel.clear();bar();render()};
 $('trips').addEventListener('input',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];t.name=e.target.value;t.custom=true}});
-$('trips').addEventListener('click',e=>{const im=e.target.closest('img[data-p]');if(im){const p=trips[im.dataset.t].list[im.dataset.p];sel.has(p)?sel.delete(p):sel.add(p);im.classList.toggle('sel');bar();return}
+function mark(kind,list){const now=Date.now();list.forEach(p=>{if(kind==='save')p.saved=now;else p.gone=now});touch(...list);flush();
+  setTimeout(()=>{render();toast(kind==='save'?`Marked ${list.length} photo${list.length===1?'':'s'} as saved. If the Shortcut failed, tap "Mark as not saved".`:`Marked ${list.length} photo${list.length===1?'':'s'} as removed from your phone.`)},400)}
+$('trips').addEventListener('click',e=>{
+  const a=e.target.closest('a[data-act]');
+  if(a){const act=a.dataset.act;if(act==='bin'){mark('gone',binList());return}const t=trips[a.dataset.g],{live,uns}=parts(t);mark(act==='save'?'save':'gone',act==='save'?uns:live);return}
+  const bk=e.target.closest('img[data-back]');if(bk){const p=byId.get(+bk.dataset.back);p.dec=null;touch(p);const g=groupOf(p);toast(`Put back in "${g?g.name:''}"`);render();return}
+  const go=e.target.closest('[data-go]');
+  const im=e.target.closest('img[data-id]');if(im){const p=byId.get(+im.dataset.id);sel.has(p)?sel.delete(p):sel.add(p);im.classList.toggle('sel');bar();return}
   const b=e.target.closest('button');if(!b)return;
   if(b.dataset.all)openDeck('g'+b.dataset.all);
-
-  if(b.dataset.split){const i=+b.dataset.split,t=trips[i],h=Math.ceil(t.list.length/2),n={...t,list:t.list.slice(h),name:t.name+' (part 2)',saved:false};t.list=t.list.slice(0,h);[t,n].forEach(x=>{x.start=x.list[0].date;x.end=x.list[x.list.length-1].date});trips.splice(i+1,0,n);render()}
-  if(b.dataset.flip){const t=trips[b.dataset.flip];t.kind=NEXT[t.kind];t.name=defName(t);render()}
-  if(b.dataset.share){const t=trips[b.dataset.share],files=t.list.filter(p=>p.dec!=='del').map(p=>p.file);navigator.share({files,title:t.name}).then(()=>toast('Saved. Check the folder on your drive.'),err=>{if(err&&err.name!=='AbortError')toast('Sharing failed: '+err.message)});return}
+  if(b.dataset.split){const i=+b.dataset.split,t=trips[i],h=Math.ceil(t.list.length/2),n={...t,id:gid++,list:t.list.slice(h),name:t.name+' (part 2)'};t.list=t.list.slice(0,h);[t,n].forEach(fix);trips.splice(i+1,0,n);render()}
+  if(b.dataset.flip){const t=trips[b.dataset.flip];t.kind=NEXT[t.kind];if(!t.custom)t.name=defName(t);render()}
+  if(b.dataset.unsave){const t=trips[b.dataset.unsave],ps=t.list.filter(p=>p.saved);ps.forEach(p=>p.saved=0);touch(...ps);render();toast('Marked as not saved')}
+  if(b.dataset.ungone){const t=trips[b.dataset.ungone],ps=t.list.filter(p=>p.gone);ps.forEach(p=>p.gone=0);touch(...ps);render();toast('Moved back to your list')}
+  if(b.dataset.clear){const gone=trips.filter(t=>state(t)==='done');const ks=gone.flatMap(t=>t.list);trips=trips.filter(t=>!gone.includes(t));
+    ks.forEach(p=>{byKey.delete(p.key);byId.delete(p.id)});photos=photos.filter(p=>byKey.has(p.key));tx('photos','readwrite',s=>{ks.forEach(p=>s.delete(p.key))}).catch(()=>{});render();toast('Cleared finished groups')}
+  if(b.dataset.share){const t=trips[b.dataset.share],files=t.list.filter(p=>p.dec!=='del'&&p.file).map(p=>p.file);navigator.share({files,title:t.name}).then(()=>toast('Saved. Check the folder on your drive.'),err=>{if(err&&err.name!=='AbortError')toast('Sharing failed: '+err.message)});return}
   if(b.dataset.copy){const t=trips[b.dataset.copy];navigator.clipboard.writeText(t.name).then(()=>{t.copied=true;toast('Name copied');render()},()=>toast('Copy blocked. Type the name instead.'));return}
   if(b.dataset.save)saveTrip(trips[b.dataset.save]);
 });
+$('summary').addEventListener('click',e=>{const b=e.target.closest('[data-go]');if(!b)return;if(b.dataset.go==='review')return $('tabR').click();const el=$(b.dataset.go);el&&el.scrollIntoView({behavior:'smooth',block:'start'})});
 function renderHome(home){
   const el=$('homepick');if(!places.length||(myHome&&!el.dataset.open)){el.hidden=true;return}
   el.hidden=false;
@@ -248,51 +350,51 @@ function renderHome(home){
    places.slice(0,8).map((c,i)=>{const a=c.list[0].date,b=c.list[c.list.length-1].date,d=home?Math.round(km(home.lat,home.lon,c.lat,c.lon)/1.609):0;
    return `<div class="row" style="align-items:center"><img src="${c.list[0].thumb||''}" alt="" style="transform:${ROT[c.list[0].rot]||'none'};width:56px;height:56px;border-radius:8px;object-fit:cover"><div style="flex:1"><b>${c.list.length} photos</b><div class="mute">${esc(range(a,b))}${d?` · ${d.toLocaleString()} mi from current home`:''}</div></div><button data-home="${i}" class="${myHome&&d<1?'primary':''}">This is home</button></div>`}).join('');
 }
-$('homepick').addEventListener('click',e=>{const b=e.target.closest('[data-home]');if(!b)return;const c=places[b.dataset.home];myHome={lat:c.lat,lon:c.lon};try{localStorage.setItem('ts-home',JSON.stringify(myHome))}catch(err){}delete $('homepick').dataset.open;trips.forEach(t=>t.name=null);group();toast('Home saved. Trips regrouped.')});
-$('chhome').onclick=()=>{$('homepick').dataset.open='1';group();$('homepick').scrollIntoView({behavior:'smooth'})};
-$('regroup').onclick=()=>{trips.forEach(t=>t.name=null);group()};
+$('homepick').addEventListener('click',e=>{const b=e.target.closest('[data-home]');if(!b)return;const c=places[b.dataset.home];myHome={lat:c.lat,lon:c.lon};try{localStorage.setItem('ts-home',JSON.stringify(myHome))}catch(err){}delete $('homepick').dataset.open;regroup();toast('Home saved. Groups you have not named or saved were regrouped.')});
+$('chhome').onclick=()=>{$('homepick').dataset.open='1';homeOf();$('homepick').scrollIntoView({behavior:'smooth'})};
+$('regroup').onclick=()=>{regroup();toast('Regrouped. Named and saved groups were left as they are.')};
+$('reset').onclick=async e=>{const b=e.currentTarget;if(!b.dataset.armed){b.dataset.armed=1;b.textContent='Tap again to erase every group here (your photos are not touched)';return}
+  clearTimeout(svT);dirty.clear();try{await tx('photos','readwrite',s=>s.clear());await tx('kv','readwrite',s=>s.clear())}catch(err){}location.reload()};
 
 async function saveTrip(t){
-  t.payload=t.name;t.copied=false;t.saved=true;render();
-  const tr=trips.indexOf(t);setTimeout(()=>{const el=document.querySelectorAll('#trips .trip')[tr];el&&el.querySelector('.send')&&el.querySelector('.send').scrollIntoView({behavior:'smooth',block:'center'})},50);
+  t.payload=t.name;t.copied=false;render();
+  const tr=trips.indexOf(t);setTimeout(()=>{const el=document.querySelector(`[data-save="${tr}"]`);el&&el.closest('.trip').querySelector('.send')&&el.closest('.trip').querySelector('.send').scrollIntoView({behavior:'smooth',block:'center'})},50);
   try{await Promise.race([navigator.clipboard.writeText(t.name),new Promise((_,r)=>setTimeout(r,1500))]);t.copied=true;render()}catch(err){}
 }
 const HOSTED=/github\.io$/.test(location.hostname)||location.hash==='#hosted-test';
-function scURL(name,t,all){const s=new Date(t.start-60000),e=new Date(+t.end+60000);
-  const ps=all?t.list:t.list.filter(p=>p.dec!=='del');
-  const text=[t.name.replace(/[\/\\:\n]/g,'-'),fmt(s),fmt(e),ps.map(p=>stamp(p.date)).join(',')||'none'].join('\n');
+function scURL(name,title,ps){const ds=ps.map(p=>+p.date),s=new Date(Math.min(...ds)-60000),e=new Date(Math.max(...ds)+60000);
+  const text=[title.replace(/[\/\\:\n]/g,'-').trim()||'Trip',fmt(s),fmt(e),ps.map(p=>stamp(p.date)).join(',')||'none'].join('\n');
   return 'shortcuts://run-shortcut?name='+encodeURIComponent(name)+'&input=text&text='+encodeURIComponent(text)}
-const canShareFiles=f=>{try{return !!(navigator.canShare&&navigator.canShare({files:f}))}catch(e){return false}};
+const canShareFiles=f=>{try{return !!(f.length&&navigator.canShare&&navigator.canShare({files:f}))}catch(e){return false}};
 function sendPanel(t,i){if(!t.payload)return'';
-  const del=t.list.filter(p=>p.dec==='del').length,files=t.list.filter(p=>p.dec!=='del').map(p=>p.file);
+  const del=t.list.filter(p=>p.dec==='del').length,files=t.list.filter(p=>p.dec!=='del'&&p.file).map(p=>p.file);
   if(canShareFiles(files.slice(0,1)))return `<div class="send"><b>Save "${esc(t.name)}" to your drive</b>
   <button class="primary" data-share="${i}">Save ${files.length} photo${files.length===1?'':'s'} to drive</button>
-  <div class="mute">In the share sheet, tap <b>Save to Files</b>, open your drive, and pick (or make) the folder <b>${esc(t.name)}</b> inside Trips.${del?` The ${del} photo${del===1?'':'s'} you swiped left ${del===1?'is':'are'} left out.`:''} Afterwards, delete the trip's photos in the Photos app.</div></div>`;
+  <div class="mute">In the share sheet, tap <b>Save to Files</b>, open your drive, and pick (or make) the folder <b>${esc(t.name)}</b> inside Trips.</div></div>`;
   return `<div class="send"><b>Save "${esc(t.name)}" to your drive</b>
   <ol style="margin:0;padding-left:20px">
   <li>Plug in the drive. Go to your home screen and tap <b>Save trip &amp; clean up</b>.</li>
   <li>It asks for the trip name. ${t.copied?'The name is already copied, so just paste it.':`Type <b>${esc(t.name)}</b>.`}</li>
-  <li>In the photo picker, scroll to <b>${esc(range(t.start,t.end))}</b> and drag across the ${t.list.length-del} photo${t.list.length-del===1?'':'s'} in this group${del?` (leave out the ${del} faded one${del===1?'':'s'} you swiped left, and delete those in Photos)`:''}.</li>
+  <li>In the photo picker, scroll to <b>${esc(range(t.start,t.end))}</b> and drag across the ${t.list.length-del} photo${t.list.length-del===1?'':'s'} in this group.</li>
   <li>It copies them to Trips/${esc(t.name)} on the drive, then asks before deleting them from the phone.</li></ol>
   <div class="row"><button data-copy="${i}">${t.copied?'Copy name again':'Copy name'}</button><a class="btn" href="shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}" target="_blank" rel="noopener">Try opening the Shortcut</a></div></div>`}
 
 /* ---- swipe deck ---- */
-const needs=(p,t)=>!p.dec&&(p.why.length>0||t.name==='Unsorted');
 const groupOf=p=>trips.find(t=>t.list.includes(p));
-function openDeck(sc){const need=trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0);
-  $('scope').innerHTML=`<option value="need">Needs a look, all groups (${need})</option>`+trips.map((t,i)=>`<option value="g${i}">All photos in ${esc(t.name)} (${t.list.length})</option>`).join('');
-  $('scope').value=sc;deck=sc==='need'?trips.flatMap(t=>t.list.filter(p=>needs(p,t))):trips[+sc.slice(1)].list.slice();
+function openDeck(sc){const need=needCount(),open=trips.map((t,i)=>[t,i]).filter(([t])=>state(t)!=='done');
+  $('scope').innerHTML=`<option value="need">Needs a look, all groups (${need})</option>`+open.map(([t,i])=>`<option value="g${i}">All photos in ${esc(t.name)} (${t.list.filter(p=>!p.gone).length})</option>`).join('');
+  $('scope').value=sc;deck=sc==='need'?trips.flatMap(t=>t.list.filter(p=>needs(p,t))):trips[+sc.slice(1)].list.filter(p=>!p.gone);
   di=0;hist=[];$('deck').classList.add('on');show()}
 $('scope').onchange=e=>openDeck(e.target.value);
-let bigU=null;const bigURL=p=>{if(bigU)URL.revokeObjectURL(bigU);bigU=URL.createObjectURL(p.file);return bigU};
+let bigU=null;const bigURL=p=>{if(bigU)URL.revokeObjectURL(bigU);bigU=null;if(!p.file)return p.thumb||'';bigU=URL.createObjectURL(p.file);return bigU};
 function show(){
   $('wrong').classList.remove('on');
-  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left deletes`:'All done here. Pick another set above, or tap Done.';
-  $('cw').innerHTML=p?`<div class="sw" id="sw"><img src="${bigURL(p)}" alt="Photo to review"><span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
+  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file?'':' · small preview (add the photos again for a sharp view)'):'All done here. Pick another set above, or tap Done.';
+  $('cw').innerHTML=p?`<div class="sw" id="sw"><img src="${bigURL(p)}" alt="Photo to review" style="${p.file?'':`transform:${ROT[p.rot]||'none'}`}"><span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
   if(p)drag($('sw'));
   $('bwrong').textContent=g&&g.name==='Unsorted'?'Move to group':'Wrong group';if(g&&g.name==='Unsorted')$('bwrong').click();
 }
-function decide(v){const p=deck[di];if(!p)return;p.dec=v;saved[keyOf(p)]=v;persist();hist.push(di);
+function decide(v){const p=deck[di];if(!p)return;p.dec=v;touch(p);store();hist.push(di);
   const el=$('sw');if(el){el.style.transform=`translateX(${v==='del'?-140:140}vw) rotate(${v==='del'?-20:20}deg)`}
   setTimeout(()=>{di++;show()},200)}
 function drag(el){let x0=null,dx=0;
@@ -300,15 +402,17 @@ function drag(el){let x0=null,dx=0;
   el.onpointermove=e=>{if(x0==null)return;dx=e.clientX-x0;el.style.transform=`translateX(${dx}px) rotate(${dx/18}deg)`;el.querySelector('.k').style.opacity=Math.max(0,dx/100);el.querySelector('.d').style.opacity=Math.max(0,-dx/100)};
   el.onpointerup=el.onpointercancel=()=>{el.classList.remove('drag');if(dx>100)decide('keep');else if(dx<-100)decide('del');else el.style.transform='';x0=null;dx=0};
 }
-$('bwrong').onclick=()=>{const p=deck[di];if(!p)return;const g=groupOf(p);$('wrongto').innerHTML='<option value="">Move this photo to…</option><option value="u">Unsorted</option><option value="n">A new group</option>'+trips.map((t,i)=>t===g?'':`<option value="${i}">${esc(t.name)}</option>`).join('');$('wrong').classList.toggle('on')};
+$('bwrong').onclick=()=>{const p=deck[di];if(!p)return;const g=groupOf(p);$('wrongto').innerHTML='<option value="">Move this photo to…</option><option value="u">Unsorted</option><option value="n">A new group</option>'+trips.map((t,i)=>t===g||state(t)==='done'?'':`<option value="${i}">${esc(t.name)}</option>`).join('');$('wrong').classList.toggle('on')};
 $('wrongto').onchange=e=>{const v=e.target.value,p=deck[di];if(!v||!p)return;sel.clear();sel.add(p);
   if(v==='u')$('moveout').click();else if(v==='n')$('movenew').click();else moveSel(trips[+v]);
   const g=groupOf(p);toast(`Moved to "${g?g.name:''}"`);di++;show()};
 $('bkeep').onclick=()=>decide('keep');$('bdel').onclick=()=>decide('del');
-$('bundo').onclick=()=>{if(!hist.length)return;di=hist.pop();const p=deck[di];p.dec=null;delete saved[keyOf(p)];persist();show()};
-$('bclose').onclick=()=>{$('deck').classList.remove('on');$('tabG').setAttribute('aria-selected','true');$('tabR').setAttribute('aria-selected','false');render()};
+$('bundo').onclick=()=>{if(!hist.length)return;di=hist.pop();const p=deck[di];p.dec=null;touch(p);store();show()};
+$('bclose').onclick=()=>{$('deck').classList.remove('on');$('tabG').setAttribute('aria-selected','true');$('tabR').setAttribute('aria-selected','false');render();const n=binList().length;if(n)toast(`${n} photo${n===1?' is':'s are'} in To delete at the top. Delete them whenever you like.`)};
 $('tabR').onclick=()=>{$('tabR').setAttribute('aria-selected','true');$('tabG').setAttribute('aria-selected','false');openDeck('need')};
 $('tabG').onclick=()=>$('bclose').click();
 document.addEventListener('keydown',e=>{if(!$('deck').classList.contains('on'))return;if(e.key==='ArrowRight')decide('keep');if(e.key==='ArrowLeft')decide('del');if(e.key==='Escape')$('bclose').click()});
+load();
 }
+
 </script></body></html>
