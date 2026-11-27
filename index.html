@@ -23,7 +23,7 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid va
 .primary{background:var(--coral);border-color:var(--coral);color:#fff}
 .pick{display:block;background:var(--card);border:2px dashed var(--line);border-radius:18px;padding:28px 18px;text-align:center;margin-bottom:16px}
 .pick strong{display:block;font-size:20px;margin-bottom:4px}
-.pick input{display:none}
+.pick input{display:none}.pick label.btn{cursor:pointer}
 .mute{color:var(--mute);font-size:14px}
 .bar{height:8px;background:var(--line);border-radius:9px;overflow:hidden;margin:10px 0}.bar i{display:block;height:100%;background:var(--coral);width:0}
 .trip{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
@@ -59,7 +59,7 @@ select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px 
 .del-b{background:var(--coral);color:#fff;border:0}.keep-b{background:var(--keep);color:#fff;border:0}
 #toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;z-index:10}
 @media (prefers-reduced-motion:no-preference){.sw{transition:transform .25s}.sw.drag{transition:none}}
-.pick.slim{padding:14px 18px;text-align:left;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}.pick.slim strong{display:none}.pick.slim br{display:none}.pick.slim .mute{order:3;flex-basis:100%}
+.pick.slim{padding:14px 18px;text-align:left;display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px}.pick.slim .row{margin:0;justify-content:flex-start!important}.pick.slim strong{display:none}.pick.slim br{display:none}.pick.slim .mute{order:3;flex-basis:100%}
 .welcome{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:12px 14px;margin:8px 0 4px}
 .chip{min-height:38px;border-radius:99px;font-size:15px}
 .st{display:inline-block;font-size:14px;font-weight:600;padding:2px 10px;border-radius:99px;background:var(--line)}
@@ -74,7 +74,8 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 </style></head><body>
 <header><h1>Photo Sorter</h1><p>Pick photos, see them grouped into trips, swipe through the ones that need a look, then save each trip to your drive.</p></header>
 <main>
-<label class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more photos never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary" id="pickbtn">Choose photos and videos</span><input id="files" type="file" accept="image/*,video/*" multiple></label>
+<div class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many. Add videos separately: your iPhone prepares each video before handing it over, which can take a while for long ones.</span><br><br>
+<div class="row" style="justify-content:center"><label class="btn primary" id="pickbtn">Add photos<input id="files" type="file" accept="image/*" multiple hidden></label><label class="btn" id="pickvid">Add videos<input id="vfiles" type="file" accept="video/*" multiple hidden></label></div></div>
 <div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
@@ -101,6 +102,8 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 {
 const SHORTCUT='Save trip & clean up';
 const $=id=>document.getElementById(id);
+const errBox=m=>{const t=document.getElementById('toast');if(!t)return;t.textContent='Something went wrong: '+m+' (send Claude a screenshot)';t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',12000)};
+window.addEventListener('error',e=>errBox(e.message||'unknown'));window.addEventListener('unhandledrejection',e=>errBox((e.reason&&e.reason.message)||String(e.reason)));
 let places=[],homeC=null,named=[],myHome=null,photos=[],trips=[],deck=[],di=0,hist=[],gid=1;
 const byKey=new Map(),byId=new Map();
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -202,17 +205,18 @@ async function analyse(p){
   let sum=0,sq=0,n=0;for(let y=1;y<95;y++)for(let i=1;i<95;i++){const k=y*96+i,l=gr[k-1]+gr[k+1]+gr[k-96]+gr[k+96]-4*gr[k];sum+=l;sq+=l*l;n++}
   bm.close&&bm.close();p.hash=hash;p.sharp=sq/n-(sum/n)**2;touch(p);
 }
-async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k],k)}catch(e){}}}))}
+let poolErr=null;async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k],k)}catch(e){poolErr=e;console.warn(e)}}}))}
+const within=(p,ms,v)=>Promise.race([p,new Promise(r=>setTimeout(()=>r(v),ms))]);
 const ham=(a,b)=>{let n=0;for(let i=0;i<64;i++)if(a[i]!==b[i])n++;return n};
 const km=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742*Math.asin(Math.sqrt(x))};
 
-$('files').addEventListener('change',async e=>{
+const onPick=async e=>{
   const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
-  $('prog').hidden=false;let done=0;const fresh=[],again=[];
+  $('prog').hidden=false;$('progt').textContent=`Reading ${fs.length} item${fs.length===1?'':'s'}…`;$('progb').style.width='2%';poolErr=null;let done=0;const fresh=[],again=[];
   await pool(fs,8,async f=>{
     const isV=/^video\//.test(f.type)||/\.(mov|mp4|m4v|3gp)$/i.test(f.name),isJ=!isV&&(f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name));let ex={},buf=null;
     if(isJ){buf=await f.slice(0,131072).arrayBuffer();ex=exif(buf)}
-    if(isV){const vm=await vmeta(f);ex={lat:vm.lat,lon:vm.lon,vdate:vm.date,dur:vm.dur}}
+    if(isV){const vm=await within(vmeta(f),4000,{});ex={lat:vm.lat,lon:vm.lon,vdate:vm.date,dur:vm.dur}}
     const date=ex.vdate||parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
     const old=byKey.get(key);
     if(old){old.file=f;again.push(old)}
@@ -222,6 +226,7 @@ $('files').addEventListener('change',async e=>{
       add(p);fresh.push(p);touch(p)}
     if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
   });
+  if(poolErr&&!fresh.length&&!again.length){$('prog').hidden=true;errBox(poolErr.message||String(poolErr));return}
   photos.sort((a,b)=>a.date-b.date);
   const before=new Map(trips.map(t=>[t,t.list.length]));
   if(fresh.length)placeNew(fresh);else tidy();
@@ -233,7 +238,9 @@ $('files').addEventListener('change',async e=>{
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
     if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}});
   $('prog').hidden=true;flag();render();store();
-});
+};
+$('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
+['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
 const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
 function flag(){
   photos.forEach(p=>p.why=[]);
@@ -329,7 +336,7 @@ function render(){
   const ix=t=>trips.indexOf(t),by=s=>trips.filter(t=>s.includes(state(t)));
   const toSave=by(['new','partial']),saved=by(['saved','empty']),done=by(['done']);
   $('tabs').hidden=$('hint').hidden=!trips.length;
-  $('pick').classList.toggle('slim',trips.length>0);$('picktitle').textContent=trips.length?'Add more':'Choose photos and videos';$('pickbtn').textContent=trips.length?'Add more photos and videos':'Choose photos and videos';
+  $('pick').classList.toggle('slim',trips.length>0);$('picktitle').textContent=trips.length?'Add more':'Choose photos and videos';
   const chips=[toSave.length&&[`${toSave.length} group${toSave.length===1?'':'s'} to save`,'sec-save'],saved.length&&[`${saved.length} saved, still on phone`,'sec-saved'],bins.length&&[`${bins.length} in To delete`,'sec-bin'],need&&[`${need} to review`,'review']].filter(Boolean);
   $('summary').innerHTML=!trips.length?'':`<div class="welcome"><b>${chips.length?'Where you left off':'All caught up'}</b>${chips.length?`<div class="row">${chips.map(([l,s])=>`<button class="chip" data-go="${s}">${esc(l)}</button>`).join('')}</div>`:'<div class="mute">Everything is saved and cleaned up. Add more photos any time; your groups stay here.</div>'}</div>`;
   const binCard=bins.length?`<section class="trip bin" id="sec-bin"><b class="h">To delete (${bins.length})</b><div class="mute">Photos you swiped left, from every group. Tap one to put it back.</div>
