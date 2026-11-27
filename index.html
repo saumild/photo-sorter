@@ -93,7 +93,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 12</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div><div class="mute" id="loadinfo" style="font-size:12px;margin-top:6px"></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 13</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -132,16 +132,27 @@ function store(){clearTimeout(svT);svT=setTimeout(flush,250)}
 async function flush(){clearTimeout(svT);const ps=[...dirty];dirty.clear();
   try{const tbs=await Promise.all(ps.map(p=>p.thumbBlob&&!p.thumbBad?p.thumbBlob.arrayBuffer().catch(()=>null):null));
     if(ps.length)await tx('photos','readwrite',s=>{ps.forEach((p,i)=>s.put(rec(p,tbs[i])))});
+    if(!loadOK&&!trips.length)return;const gl=trips.map(t=>({id:t.id,name:t.name,kind:t.kind,custom:!!t.custom,keys:t.list.map(p=>p.key)}));
+    if(loadOK)await tx('kv','readwrite',s=>s.put(gl,'groups-bak'));
     await tx('kv','readwrite',s=>s.put(trips.map(t=>({id:t.id,name:t.name,kind:t.kind,custom:!!t.custom,keys:t.list.map(p=>p.key)})),'groups'))}catch(e){console.warn('save failed',e)}}
 document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
-async function load(){
-  try{const [recs,gs]=await Promise.all([tx('photos','readonly',s=>s.getAll()),tx('kv','readonly',s=>s.get('groups'))]);
-    for(const r of recs||[]){const p={...r,id:nid++,date:new Date(r.date),why:[],thumbBlob:asBlob(r.thumb)};delete p.thumb;if(p.thumbBlob)p.thumb=URL.createObjectURL(p.thumbBlob);add(p)}
-    trips=(gs||[]).map(g=>({id:g.id,name:g.name,kind:g.kind,custom:g.custom,list:g.keys.map(k=>byKey.get(k)).filter(Boolean)})).filter(t=>t.list.length);
+let loadOK=false,loadInfo='';
+async function getOne(k){try{return await tx('photos','readonly',s=>s.get(k))}catch(e){return null}}
+async function load(){let recs=null,gs=null,bad=0;
+  try{gs=await tx('kv','readonly',s=>s.get('groups'))}catch(e){console.warn('groups load failed',e)}
+  try{if(!gs||!gs.length){const b=await tx('kv','readonly',s=>s.get('groups-bak'));if(b&&b.length)gs=b}}catch(e){}
+  try{recs=await tx('photos','readonly',s=>s.getAll())}catch(e){console.warn('bulk load failed, loading one by one',e);
+    try{const keys=await tx('photos','readonly',s=>s.getAllKeys());recs=[];for(const k of keys||[]){const r=await getOne(k);if(r)recs.push(r);else bad++}}catch(e2){console.warn('key load failed',e2)}}
+  try{for(const r of recs||[]){let tb=null;try{tb=asBlob(r.thumb)}catch(e){}const p={...r,id:nid++,date:new Date(r.date),why:[],thumbBlob:tb};delete p.thumb;if(p.thumbBlob)p.thumb=URL.createObjectURL(p.thumbBlob);add(p)}
+    trips=(gs||[]).map(g=>({id:g.id,name:g.name,kind:g.kind,custom:g.custom,list:(g.keys||[]).map(k=>byKey.get(k)).filter(Boolean)})).filter(t=>t.list.length);
     gid=Math.max(0,...trips.map(t=>t.id||0))+1;trips.forEach(t=>{if(!t.id)t.id=gid++});
+    loadOK=recs!==null;
   }catch(e){console.warn('load failed',e)}
   if(navigator.storage&&navigator.storage.persist)navigator.storage.persist().catch(()=>{});
-  photos.sort((a,b)=>a.date-b.date);if(photos.length){homeOf();flag()}tidy(true);
+  photos.sort((a,b)=>a.date-b.date);if(photos.length){homeOf();flag()}
+  const loose=photos.filter(p=>!p.gone&&!trips.some(t=>t.list.includes(p)));if(loose.length)placeNew(loose);else tidy(true);
+  loadInfo=`Saved on this phone: ${photos.length} photos, ${trips.length} groups`+(bad?` (${bad} could not be read)`:'')+(loadOK?'':' · could not read saved data');
+  if($('loadinfo'))$('loadinfo').textContent=loadInfo;
 }
 let nid=0;
 function add(p){photos.push(p);byKey.set(p.key,p);byId.set(p.id,p)}
