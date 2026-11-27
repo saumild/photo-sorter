@@ -83,7 +83,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 7</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -249,6 +249,8 @@ const onPick=async e=>{
 };
 $('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
 ['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
+['files','vfiles'].forEach(id=>$(id).addEventListener('cancel',()=>{if(!$('progt').textContent.startsWith('Waiting'))return;$('prog').hidden=true;
+  $('added').hidden=false;$('added').innerHTML=`<b>Your iPhone didn't send the ${id==='vfiles'?'videos':'photos'}.</b><div class="mute">If you picked a lot, the iPhone can give up while it gets them ready, especially photos stored in iCloud. Try about 100 at a time. Nothing was lost, and your groups are unchanged.</div><div class="row"><button class="link" data-x="1">Hide</button></div>`}));
 const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
 function flag(){
   photos.forEach(p=>p.why=[]);
