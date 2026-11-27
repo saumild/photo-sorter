@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Photo Sorter">
+<title>Photo Sorter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE: friendly, calm, a travel helper
+   IDEA: a contact sheet of rolls, one strip per trip
+   PICTURE: film strips of your own thumbnails; the swipe card itself
+   COLOUR/TYPE: sea teal ground band, white sheet, coral accent; Outfit
+   LAYOUT: one column, phone first */
+:root{color-scheme:light dark;--bg:light-dark(#f4f7f7,#0c1a1d);--card:light-dark(#fff,#13272b);--ink:light-dark(#0d2a30,#e6f1f2);--mute:light-dark(#5b7378,#93abb0);--sea:#0b5563;--coral:#ff6b4a;--keep:#1f9d6a;--line:light-dark(#dbe5e6,#21393e)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Outfit,system-ui,sans-serif;overflow-x:clip}
+header{background:var(--sea);color:#fff;padding:22px max(5vw,16px) 26px}
+h1{font-size:32px;line-height:1.05;margin:0 0 6px;text-wrap:balance}
+header p{margin:0;opacity:.85;max-width:60ch}
+main{max-width:760px;margin:0 auto;padding:18px max(4vw,14px) 140px}
+button,.btn{font:600 16px Outfit,system-ui,sans-serif;min-height:44px;padding:0 16px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;display:inline-flex;align-items:center;gap:6px;text-decoration:none}
+button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid var(--coral);outline-offset:2px}
+.primary{background:var(--coral);border-color:var(--coral);color:#fff}
+.pick{display:block;background:var(--card);border:2px dashed var(--line);border-radius:18px;padding:28px 18px;text-align:center;margin-bottom:16px}
+.pick strong{display:block;font-size:20px;margin-bottom:4px}
+.pick input{display:none}
+.mute{color:var(--mute);font-size:14px}
+.bar{height:8px;background:var(--line);border-radius:9px;overflow:hidden;margin:10px 0}.bar i{display:block;height:100%;background:var(--coral);width:0}
+.trip{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;margin:14px 0}
+.trip.home{opacity:.92}
+.trip input.name{font:700 20px Outfit,system-ui,sans-serif;border:0;background:transparent;color:var(--ink);width:100%;padding:4px 0;border-bottom:1px dashed var(--line)}
+.strip{display:flex;gap:4px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px 0;background:linear-gradient(var(--ink),var(--ink)) 0 0/100% 4px no-repeat}
+.strip img{flex:none;width:64px;height:64px;object-fit:cover;border-radius:6px;scroll-snap-align:start}
+.strip img.del{opacity:.25}
+.strip img.sel{outline:3px solid var(--coral);outline-offset:-3px}
+select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 10px;max-width:100%}
+.tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;background:var(--bg);padding:8px 0;margin-bottom:6px}.tabs button{flex:1;justify-content:center}.tabs button[aria-selected=true]{background:var(--sea);color:#fff;border-color:var(--sea)}
+#wrong{display:none;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}#wrong.on{display:flex}
+.send{margin-top:12px;padding:12px;border-radius:12px;background:light-dark(#eef6f7,#0f2f35);display:grid;gap:8px}
+#movebar{position:fixed;left:0;right:0;bottom:0;background:var(--sea);color:#fff;padding:10px max(4vw,14px) calc(10px + env(safe-area-inset-bottom));display:none;gap:8px;flex-wrap:wrap;align-items:center;z-index:8}
+#movebar.on{display:flex}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.tag{display:inline-block;font-size:13px;padding:2px 8px;border-radius:99px;background:light-dark(#fff1ec,#3a211b);color:light-dark(#b23a1f,#ffb09d);margin-inline-end:6px}
+.done{color:var(--keep);font-weight:600}
+.settings{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:10px 0}
+.settings label{font-size:14px;color:var(--mute)}.settings input{display:block;width:100%;font:16px Outfit,system-ui;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 10px}
+#deck{position:fixed;inset:0;background:#051418;display:none;flex-direction:column;align-items:center;justify-content:center;padding:16px;z-index:9;color:#fff}
+#deck.on{display:flex}
+.cardwrap{position:relative;width:min(88vw,420px);height:min(50vh,520px)}
+.sw{position:absolute;inset:0;border-radius:20px;overflow:hidden;background:#000;touch-action:none;box-shadow:0 18px 40px rgba(0,0,0,.5)}
+.sw img{width:100%;height:100%;object-fit:contain;pointer-events:none}
+.sw .why{position:absolute;left:10px;bottom:10px;background:rgba(0,0,0,.6);padding:4px 10px;border-radius:99px;font-size:14px}
+.stamp{position:absolute;top:18px;font:700 26px Outfit;padding:2px 12px;border:3px solid;border-radius:8px;opacity:0}
+.stamp.k{left:16px;color:var(--keep)}.stamp.d{right:16px;color:var(--coral)}
+.deckbtns{display:flex;gap:12px;margin-top:16px}.deckbtns button{min-width:96px;justify-content:center}
+.del-b{background:var(--coral);color:#fff;border:0}.keep-b{background:var(--keep);color:#fff;border:0}
+#toast{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;display:none;max-width:90vw;z-index:10}
+@media (prefers-reduced-motion:no-preference){.sw{transition:transform .25s}.sw.drag{transition:none}}
+</style></head><body>
+<header><h1>Photo Sorter</h1><p>Pick photos, see them grouped into trips, swipe through the ones that need a look, then save each trip to your drive.</p></header>
+<main>
+<label class="pick" id="pick"><strong>Choose photos</strong><span class="mute">Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary">Choose photos</span><input id="files" type="file" accept="image/*" multiple></label>
+<div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
+<details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
+<label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
+<label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
+<label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button></div></details>
+<section id="homepick" class="trip" hidden></section>
+<nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
+<div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then tap "Not in this group" or pick where it belongs. Use "Merge into…" to combine whole groups.</div>
+<div id="trips"></div>
+</main>
+<div id="deck" role="dialog" aria-label="Review photos">
+<select id="scope" aria-label="What to review" style="margin-bottom:8px"></select>
+<div class="mute" id="deckt" style="color:#cfe"></div>
+<div class="cardwrap" id="cw"></div>
+<div class="deckbtns"><button class="del-b" id="bdel">Delete</button><button id="bundo">Undo</button><button class="keep-b" id="bkeep">Keep</button></div>
+<button id="bwrong" style="margin-top:10px">Wrong group</button>
+<div id="wrong"><select id="wrongto" aria-label="Move this photo to"></select></div>
+<button id="bclose" style="margin-top:14px">Done</button>
+</div>
+<div id="movebar"><b id="movet"></b><select id="moveto" aria-label="Move to group"></select><button id="moveout">Not in this group</button><button id="movenew">New group</button><button id="movex">Cancel</button></div>
+<div id="toast"></div>
+<script>
+{
+const SHORTCUT='Save trip & clean up';
+const $=id=>document.getElementById(id);
+let places=[],homeC=null,named=[],myHome=null,photos=[],trips=[],deck=[],di=0,hist=[],curTrip=null;
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',3500)};
+let saved={};try{saved=JSON.parse(localStorage.getItem('ts-dec')||'{}')}catch(e){}
+try{myHome=JSON.parse(localStorage.getItem('ts-home')||'null');named=JSON.parse(localStorage.getItem('ts-places')||'[]')}catch(e){}
+const keyOf=p=>p.name+'|'+p.size;
+const persist=()=>{try{localStorage.setItem('ts-dec',JSON.stringify(saved))}catch(e){}};
+
+/* ---- EXIF (JPEG) ---- */
+function exif(buf){
+  const v=new DataView(buf);if(v.getUint16(0)!==0xFFD8)return{};
+  let o=2;while(o<v.byteLength-4){const m=v.getUint16(o);if(m===0xFFE1&&v.getUint32(o+4)===0x45786966)return tiff(v,o+10);if((m&0xFF00)!==0xFF00)break;o+=2+v.getUint16(o+2)}
+  return{};
+}
+function tiff(v,t){
+  const le=v.getUint16(t)===0x4949,u16=o=>v.getUint16(o,le),u32=o=>v.getUint32(o,le);
+  const str=(o,n)=>{let s='';for(let i=0;i<n;i++){const c=v.getUint8(o+i);if(!c)break;s+=String.fromCharCode(c)}return s};
+  const ifd=o=>{const r={},n=u16(t+o);for(let i=0;i<n;i++){const e=t+o+2+i*12,tag=u16(e),typ=u16(e+2),cnt=u32(e+4),vo=cnt*([0,1,1,2,4,8][typ]||1)>4?t+u32(e+8):e+8;
+    if(typ===2)r[tag]=str(vo,cnt);else if(typ===5){const a=[];for(let k=0;k<cnt;k++)a.push(u32(vo+k*8)/u32(vo+k*8+4));r[tag]=a}else if(typ===3)r[tag]=u16(vo);else if(typ===4)r[tag]=u32(vo);}return r};
+  try{const o0=u32(t+4),z=ifd(o0),out={make:z[0x010F],rot:z[0x0112]||0};
+    try{const nx=u32(t+o0+2+u16(t+o0)*12);if(nx){const z1=ifd(nx);if(z1[0x0201]&&z1[0x0202])out.th=[t+z1[0x0201],z1[0x0202]]}}catch(e){}
+    if(z[0x8769]){const e=ifd(z[0x8769]);out.date=e[0x9003]||e[0x9004]}
+    if(!out.date&&z[0x0132])out.date=z[0x0132];
+    if(z[0x8825]){const g=ifd(z[0x8825]);if(g[2]&&g[4]){const d=a=>a[0]+a[1]/60+a[2]/3600;out.lat=d(g[2])*(g[1]==='S'?-1:1);out.lon=d(g[4])*(g[3]==='W'?-1:1)}}
+    return out}catch(e){return{}}
+}
+const parseD=s=>{const m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):null};
+
+/* ---- image analysis (runs in the background, on the small preview built into each photo) ---- */
+async function analyse(p){
+  let bm;
+  if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else bm=await createImageBitmap(p.file);
+  if(!p.thumbBlob){const t=document.createElement('canvas');t.width=t.height=160;const s=Math.min(bm.width,bm.height);t.getContext('2d').drawImage(bm,(bm.width-s)/2,(bm.height-s)/2,s,s,0,0,160,160);
+    p.thumb=await new Promise(r=>t.toBlob(x=>r(URL.createObjectURL(x)),'image/jpeg',.7));p.rot=0}
+  const c=document.createElement('canvas');c.width=c.height=96;const bx=c.getContext('2d',{willReadFrequently:true});bx.imageSmoothingQuality='high';bx.drawImage(bm,0,0,96,96);
+  const g=document.createElement('canvas');g.width=9;g.height=8;const gx=g.getContext('2d',{willReadFrequently:true});gx.imageSmoothingQuality='high';gx.drawImage(c,0,0,9,8);
+  const d=gx.getImageData(0,0,9,8).data;let hash='';for(let y=0;y<8;y++)for(let i=0;i<8;i++){const a=(y*9+i)*4,b=a+4;hash+=(d[a]+d[a+1]+d[a+2])>(d[b]+d[b+1]+d[b+2])?'1':'0'}
+  const px=bx.getImageData(0,0,96,96).data,gr=new Float32Array(96*96);for(let i=0;i<gr.length;i++)gr[i]=px[i*4]*.3+px[i*4+1]*.59+px[i*4+2]*.11;
+  let sum=0,sq=0,n=0;for(let y=1;y<95;y++)for(let i=1;i<95;i++){const k=y*96+i,l=gr[k-1]+gr[k+1]+gr[k-96]+gr[k+96]-4*gr[k];sum+=l;sq+=l*l;n++}
+  bm.close&&bm.close();p.hash=hash;p.sharp=sq/n-(sum/n)**2;
+}
+async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k],k)}catch(e){}}}))}
+const ham=(a,b)=>{let n=0;for(let i=0;i<64;i++)if(a[i]!==b[i])n++;return n};
+const km=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742*Math.asin(Math.sqrt(x))};
+
+let nextId=0,busy=false;
+$('files').addEventListener('change',async e=>{
+  const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
+  $('prog').hidden=false;let done=0;const fresh=[];
+  await pool(fs,8,async f=>{
+    const isJ=f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name);let ex={},buf=null;
+    if(isJ){buf=await f.slice(0,131072).arrayBuffer();ex=exif(buf)}
+    const p={id:nextId++,file:f,name:f.name,size:f.size,date:parseD(ex.date)||new Date(f.lastModified),lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0};
+    if(ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
+    p.dec=saved[keyOf(p)]||null;photos.push(p);fresh.push(p);
+    if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
+  });
+  group();
+  let n=0;$('progt').textContent='Groups are ready. Checking for blurry and similar photos in the background…';
+  await pool(fresh,4,async p=>{await analyse(p);n++;
+    if(!p.thumbBlob){const im=document.querySelector(`img[data-id="${p.id}"]`);if(im){im.src=p.thumb;im.style.transform=''}}
+    if(n%20===0||n===fresh.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${fresh.length}`;$('progb').style.width=(n/fresh.length*100)+'%'}});
+  $('prog').hidden=true;flag();render();
+});
+const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
+function flag(){
+  photos.forEach(p=>p.why=[]);
+  for(let i=0;i<photos.length;i++){const p=photos[i];
+    if(p.shot)p.why.push('Screenshot');
+    if(p.sharp!=null&&p.sharp<60)p.why.push('Looks blurry');
+    if(p.hash)for(let j=i-1;j>=0&&p.date-photos[j].date<600000;j--){const q=photos[j];if(q.hash&&ham(p.hash,q.hash)<=6){const lose=p.sharp<q.sharp?p:q;if(!lose.why.includes('Similar to another'))lose.why.push('Similar to another');break}}
+  }
+}
+function group(){
+  photos.sort((a,b)=>a.date-b.date);flag();
+  const miles=+$('miles').value||5,gapH=+$('gap').value||72,lim=miles*1.609;
+  places=[];photos.filter(p=>p.lat!=null).forEach(p=>{let c=places.find(c=>km(c.lat,c.lon,p.lat,p.lon)<5);if(!c){c={lat:p.lat,lon:p.lon,list:[]};places.push(c)}c.list.push(p)});
+  places.sort((a,b)=>b.list.length-a.list.length);
+  const home=myHome||(places[0]?{lat:places[0].lat,lon:places[0].lon}:null);
+  homeC=home;renderHome(home);
+  const anyGps=!!home;trips=[];let cur=null,last=null;
+  for(const p of photos){
+    const away=home&&p.lat!=null?km(home.lat,home.lon,p.lat,p.lon)>lim:null;
+    p.dist=away!=null?km(home.lat,home.lon,p.lat,p.lon)/1.609:null;
+    p.kind=!anyGps?'trip':away===null?(last?last.kind:'home'):(away?'trip':'home');last=p;
+  }
+  // occasions: busy days near home (a day runs 4am to 4am so late parties stay together)
+  const occN=+$('occ').value||15,dayOf=p=>{const d=new Date(p.date-4*3600000);return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate()},cnt={};
+  photos.forEach(p=>{if(p.kind==='home'){const k=dayOf(p);cnt[k]=(cnt[k]||0)+1}});
+  photos.forEach(p=>{if(p.kind==='home'&&cnt[dayOf(p)]>=occN)p.kind='occasion'});
+  last=null;
+  for(const p of photos){const kind=p.kind;
+    const month=p.date.getFullYear()+'-'+p.date.getMonth();
+    const gap=last?(p.date-last.date)/3600000:0;
+    if(!cur||cur.kind!==kind||(kind==='trip'&&gap>gapH)||(kind==='occasion'&&gap>30)||(kind==='home'&&cur.month!==month)){cur={kind,month,list:[]};trips.push(cur)}
+    cur.list.push(p);last=p;
+  }
+  trips.forEach(t=>{t.start=t.list[0].date;t.end=t.list[t.list.length-1].date;const ds=t.list.map(p=>p.dist).filter(x=>x!=null);t.far=ds.length?Math.max(...ds):null;
+    t.name=t.name||defName(t)});
+  for(const n of named){if(!photos.some(p=>p.lat!=null&&km(n.lat,n.lon,p.lat,p.lon)<.5))continue;
+    const t={kind:'occasion',list:[],name:n.name,custom:true};trips.push(t);absorb(t,n);fix(t);t.kind=t.list[0].kind;trips=trips.filter(t=>t.list.length)}
+  trips.forEach(t=>{if(!t.custom)t.name=defName(t)});trips.sort((a,b)=>a.start-b.start);
+  $('summary').textContent=photos.length?`${photos.length} photos, ${(n=>n+(n===1?' trip':' trips'))(trips.filter(t=>t.kind==='trip').length)}.`+(anyGps?'':' These photos had no location, so they are grouped by date only.')+((n=>n&&n<photos.length?` ${photos.length-n} of ${photos.length} photos had no location, so they were placed by date.`:'')(photos.filter(p=>p.lat!=null).length)):'';
+  $('hint').hidden=$('tabs').hidden=!photos.length;render();
+}
+const defName=t=>t.kind==='home'?'At home, '+t.start.toLocaleDateString(undefined,{month:'short',year:'numeric'}):t.kind==='occasion'?'Occasion, '+range(t.start,t.end):((t.far||0)<50&&t.end-t.start<86400000?'Outing, ':'Trip, ')+range(t.start,t.end);
+const NEXT={home:'occasion',occasion:'trip',trip:'home'};
+const range=(a,b)=>{const o={month:'short',day:'numeric'};const s=a.toLocaleDateString(undefined,o),e=b.toLocaleDateString(undefined,o);return (s===e?s:s+' to '+e)+', '+b.getFullYear()};
+const pad=n=>String(n).padStart(2,'0');
+const fmt=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+const stamp=d=>`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+
+function render(){
+  $('tabR').textContent=`Review (${trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0)})`;
+  $('trips').innerHTML=trips.map((t,i)=>{
+    const need=t.list.filter(p=>needs(p,t)).length,del=t.list.filter(p=>p.dec==='del').length;
+    return `<section class="trip ${t.kind}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
+    <div class="mute">${esc(range(t.start,t.end))} · ${t.list.length} photo${t.list.length===1?'':'s'}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${del?` · ${del} marked to delete`:''}</div>
+    <div class="strip">${t.list.map((p,j)=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" data-p="${j}" class="${p.dec==='del'?'del':''} ${sel.has(p)?'sel':''}">`).join('')}</div>
+    <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
+    <div class="row"><button data-all="${i}">Look through all</button>
+    ${HOSTED?`<a class="btn primary" href="${esc(scURL('Save trip',t,false))}">Save trip</a><a class="btn" style="color:var(--coral)" href="${esc(scURL('Delete trip',t,true))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
+    ${trips.length>1?`<select data-into="${i}" aria-label="Merge into"><option value="">Merge into…</option>${trips.map((o,k)=>k===i?'':`<option value="${k}">${k===i-1?'↑ ':k===i+1?'↓ ':''}${esc(o.name)}</option>`).join('')}</select>`:''}
+    <button data-flip="${i}">Make it ${NEXT[t.kind]==='home'?'home':'a'+(NEXT[t.kind]==='occasion'?'n occasion':' trip')}</button>
+    ${t.list.length>1?`<button data-split="${i}">Split in half</button>`:''}</div>${sendPanel(t,i)}</section>`}).join('');
+}
+function fix(t){t.list.sort((a,b)=>a.date-b.date);t.start=t.list[0].date;t.end=t.list[t.list.length-1].date;const ds=t.list.map(p=>p.dist).filter(x=>x!=null);t.far=ds.length?Math.max(...ds):null}
+function center(t){const g=t.list.filter(p=>p.lat!=null);if(!g.length)return null;const c={lat:g.reduce((s,p)=>s+p.lat,0)/g.length,lon:g.reduce((s,p)=>s+p.lon,0)/g.length};return g.every(p=>km(c.lat,c.lon,p.lat,p.lon)<1)?c:null}
+function pullIn(t){const c=center(t);if(!c)return 0;if(homeC&&km(homeC.lat,homeC.lon,c.lat,c.lon)<.5)return 0;
+  named=named.filter(n=>n.name!==t.name&&km(n.lat,n.lon,c.lat,c.lon)>=.5);named.push({name:t.name,lat:c.lat,lon:c.lon});try{localStorage.setItem('ts-places',JSON.stringify(named))}catch(e){}
+  return absorb(t,c)}
+function absorb(t,c){let moved=0;
+  for(const gps of [true,false])for(const o of trips){if(o===t)continue;const m=o.list.filter(p=>gps?(p.lat!=null&&km(c.lat,c.lon,p.lat,p.lon)<.5):(p.lat==null&&t.list.some(q=>q.lat!=null&&Math.abs(q.date-p.date)<3*3600000)));if(!m.length)continue;o.list=o.list.filter(p=>!m.includes(p));t.list.push(...m);moved+=m.length}
+  return moved}
+function tidy(){trips=trips.filter(t=>t.list.length);trips.forEach(t=>{fix(t);if(!t.custom)t.name=defName(t)});trips.sort((a,b)=>a.start-b.start);render()}
+const sel=new Set();
+function bar(){$('movebar').classList.toggle('on',sel.size>0);$('movet').textContent=`${sel.size} selected · move to`;$('moveto').innerHTML='<option value="">Choose a group…</option>'+trips.map((o,k)=>`<option value="${k}">${esc(o.name)}</option>`).join('')}
+function moveSel(target){trips.forEach(t=>t.list=t.list.filter(p=>!sel.has(p)));target.list.push(...sel);sel.clear();bar();tidy()}
+$('trips').addEventListener('change',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];if(!t.name.trim())return;const n=pullIn(t);if(n){toast(`Moved ${n} photo${n===1?'':'s'} from the same place into "${t.name}". This place will be remembered.`);tidy()}else if(!center(t))toast('This group covers several places, so nothing else was pulled in.');return}
+  const s=e.target.closest('[data-into]');if(!s||s.value==='')return;const a=trips[+s.dataset.into],t=trips[+s.value];t.list.push(...a.list);a.list=[];toast(`Merged into "${t.name}"`);tidy()});
+$('moveto').onchange=e=>{if(e.target.value!=='')moveSel(trips[+e.target.value])};
+$('movenew').onclick=()=>{const first=[...sel].sort((a,b)=>a.date-b.date)[0];const t={kind:first.kind||'trip',list:[]};trips.push(t);t.list=[first];fix(t);t.name=defName(t);t.list=[];moveSel(t)};
+$('moveout').onclick=()=>{let u=trips.find(t=>t.name==='Unsorted');if(!u){u={kind:'home',list:[],name:'Unsorted',custom:true};trips.push(u)}moveSel(u);toast('Moved to "Unsorted". Move them to the right group from there.')};
+$('movex').onclick=()=>{sel.clear();bar();render()};
+$('trips').addEventListener('input',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];t.name=e.target.value;t.custom=true}});
+$('trips').addEventListener('click',e=>{const im=e.target.closest('img[data-p]');if(im){const p=trips[im.dataset.t].list[im.dataset.p];sel.has(p)?sel.delete(p):sel.add(p);im.classList.toggle('sel');bar();return}
+  const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.all)openDeck('g'+b.dataset.all);
+
+  if(b.dataset.split){const i=+b.dataset.split,t=trips[i],h=Math.ceil(t.list.length/2),n={...t,list:t.list.slice(h),name:t.name+' (part 2)',saved:false};t.list=t.list.slice(0,h);[t,n].forEach(x=>{x.start=x.list[0].date;x.end=x.list[x.list.length-1].date});trips.splice(i+1,0,n);render()}
+  if(b.dataset.flip){const t=trips[b.dataset.flip];t.kind=NEXT[t.kind];t.name=defName(t);render()}
+  if(b.dataset.share){const t=trips[b.dataset.share],files=t.list.filter(p=>p.dec!=='del').map(p=>p.file);navigator.share({files,title:t.name}).then(()=>toast('Saved. Check the folder on your drive.'),err=>{if(err&&err.name!=='AbortError')toast('Sharing failed: '+err.message)});return}
+  if(b.dataset.copy){const t=trips[b.dataset.copy];navigator.clipboard.writeText(t.name).then(()=>{t.copied=true;toast('Name copied');render()},()=>toast('Copy blocked. Type the name instead.'));return}
+  if(b.dataset.save)saveTrip(trips[b.dataset.save]);
+});
+function renderHome(home){
+  const el=$('homepick');if(!places.length||(myHome&&!el.dataset.open)){el.hidden=true;return}
+  el.hidden=false;
+  el.innerHTML=`<strong>Where is home?</strong><div class="mute">Tap the place where you live. Photos within ${esc($('miles').value)} miles of it count as home and everything else is a trip (change the miles under Trip settings). You only need to do this once.</div>`+
+   places.slice(0,8).map((c,i)=>{const a=c.list[0].date,b=c.list[c.list.length-1].date,d=home?Math.round(km(home.lat,home.lon,c.lat,c.lon)/1.609):0;
+   return `<div class="row" style="align-items:center"><img src="${c.list[0].thumb||''}" alt="" style="transform:${ROT[c.list[0].rot]||'none'};width:56px;height:56px;border-radius:8px;object-fit:cover"><div style="flex:1"><b>${c.list.length} photos</b><div class="mute">${esc(range(a,b))}${d?` · ${d.toLocaleString()} mi from current home`:''}</div></div><button data-home="${i}" class="${myHome&&d<1?'primary':''}">This is home</button></div>`}).join('');
+}
+$('homepick').addEventListener('click',e=>{const b=e.target.closest('[data-home]');if(!b)return;const c=places[b.dataset.home];myHome={lat:c.lat,lon:c.lon};try{localStorage.setItem('ts-home',JSON.stringify(myHome))}catch(err){}delete $('homepick').dataset.open;trips.forEach(t=>t.name=null);group();toast('Home saved. Trips regrouped.')});
+$('chhome').onclick=()=>{$('homepick').dataset.open='1';group();$('homepick').scrollIntoView({behavior:'smooth'})};
+$('regroup').onclick=()=>{trips.forEach(t=>t.name=null);group()};
+
+async function saveTrip(t){
+  t.payload=t.name;t.copied=false;t.saved=true;render();
+  const tr=trips.indexOf(t);setTimeout(()=>{const el=document.querySelectorAll('#trips .trip')[tr];el&&el.querySelector('.send')&&el.querySelector('.send').scrollIntoView({behavior:'smooth',block:'center'})},50);
+  try{await Promise.race([navigator.clipboard.writeText(t.name),new Promise((_,r)=>setTimeout(r,1500))]);t.copied=true;render()}catch(err){}
+}
+const HOSTED=/github\.io$/.test(location.hostname)||location.hash==='#hosted-test';
+function scURL(name,t,all){const s=new Date(t.start-60000),e=new Date(+t.end+60000);
+  const ps=all?t.list:t.list.filter(p=>p.dec!=='del');
+  const text=[t.name.replace(/[\/\\:\n]/g,'-'),fmt(s),fmt(e),ps.map(p=>stamp(p.date)).join(',')||'none'].join('\n');
+  return 'shortcuts://run-shortcut?name='+encodeURIComponent(name)+'&input=text&text='+encodeURIComponent(text)}
+const canShareFiles=f=>{try{return !!(navigator.canShare&&navigator.canShare({files:f}))}catch(e){return false}};
+function sendPanel(t,i){if(!t.payload)return'';
+  const del=t.list.filter(p=>p.dec==='del').length,files=t.list.filter(p=>p.dec!=='del').map(p=>p.file);
+  if(canShareFiles(files.slice(0,1)))return `<div class="send"><b>Save "${esc(t.name)}" to your drive</b>
+  <button class="primary" data-share="${i}">Save ${files.length} photo${files.length===1?'':'s'} to drive</button>
+  <div class="mute">In the share sheet, tap <b>Save to Files</b>, open your drive, and pick (or make) the folder <b>${esc(t.name)}</b> inside Trips.${del?` The ${del} photo${del===1?'':'s'} you swiped left ${del===1?'is':'are'} left out.`:''} Afterwards, delete the trip's photos in the Photos app.</div></div>`;
+  return `<div class="send"><b>Save "${esc(t.name)}" to your drive</b>
+  <ol style="margin:0;padding-left:20px">
+  <li>Plug in the drive. Go to your home screen and tap <b>Save trip &amp; clean up</b>.</li>
+  <li>It asks for the trip name. ${t.copied?'The name is already copied, so just paste it.':`Type <b>${esc(t.name)}</b>.`}</li>
+  <li>In the photo picker, scroll to <b>${esc(range(t.start,t.end))}</b> and drag across the ${t.list.length-del} photo${t.list.length-del===1?'':'s'} in this group${del?` (leave out the ${del} faded one${del===1?'':'s'} you swiped left, and delete those in Photos)`:''}.</li>
+  <li>It copies them to Trips/${esc(t.name)} on the drive, then asks before deleting them from the phone.</li></ol>
+  <div class="row"><button data-copy="${i}">${t.copied?'Copy name again':'Copy name'}</button><a class="btn" href="shortcuts://run-shortcut?name=${encodeURIComponent(SHORTCUT)}" target="_blank" rel="noopener">Try opening the Shortcut</a></div></div>`}
+
+/* ---- swipe deck ---- */
+const needs=(p,t)=>!p.dec&&(p.why.length>0||t.name==='Unsorted');
+const groupOf=p=>trips.find(t=>t.list.includes(p));
+function openDeck(sc){const need=trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0);
+  $('scope').innerHTML=`<option value="need">Needs a look, all groups (${need})</option>`+trips.map((t,i)=>`<option value="g${i}">All photos in ${esc(t.name)} (${t.list.length})</option>`).join('');
+  $('scope').value=sc;deck=sc==='need'?trips.flatMap(t=>t.list.filter(p=>needs(p,t))):trips[+sc.slice(1)].list.slice();
+  di=0;hist=[];$('deck').classList.add('on');show()}
+$('scope').onchange=e=>openDeck(e.target.value);
+let bigU=null;const bigURL=p=>{if(bigU)URL.revokeObjectURL(bigU);bigU=URL.createObjectURL(p.file);return bigU};
+function show(){
+  $('wrong').classList.remove('on');
+  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left deletes`:'All done here. Pick another set above, or tap Done.';
+  $('cw').innerHTML=p?`<div class="sw" id="sw"><img src="${bigURL(p)}" alt="Photo to review"><span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
+  if(p)drag($('sw'));
+  $('bwrong').textContent=g&&g.name==='Unsorted'?'Move to group':'Wrong group';if(g&&g.name==='Unsorted')$('bwrong').click();
+}
+function decide(v){const p=deck[di];if(!p)return;p.dec=v;saved[keyOf(p)]=v;persist();hist.push(di);
+  const el=$('sw');if(el){el.style.transform=`translateX(${v==='del'?-140:140}vw) rotate(${v==='del'?-20:20}deg)`}
+  setTimeout(()=>{di++;show()},200)}
+function drag(el){let x0=null,dx=0;
+  el.onpointerdown=e=>{x0=e.clientX;el.classList.add('drag');el.setPointerCapture(e.pointerId)};
+  el.onpointermove=e=>{if(x0==null)return;dx=e.clientX-x0;el.style.transform=`translateX(${dx}px) rotate(${dx/18}deg)`;el.querySelector('.k').style.opacity=Math.max(0,dx/100);el.querySelector('.d').style.opacity=Math.max(0,-dx/100)};
+  el.onpointerup=el.onpointercancel=()=>{el.classList.remove('drag');if(dx>100)decide('keep');else if(dx<-100)decide('del');else el.style.transform='';x0=null;dx=0};
+}
+$('bwrong').onclick=()=>{const p=deck[di];if(!p)return;const g=groupOf(p);$('wrongto').innerHTML='<option value="">Move this photo to…</option><option value="u">Unsorted</option><option value="n">A new group</option>'+trips.map((t,i)=>t===g?'':`<option value="${i}">${esc(t.name)}</option>`).join('');$('wrong').classList.toggle('on')};
+$('wrongto').onchange=e=>{const v=e.target.value,p=deck[di];if(!v||!p)return;sel.clear();sel.add(p);
+  if(v==='u')$('moveout').click();else if(v==='n')$('movenew').click();else moveSel(trips[+v]);
+  const g=groupOf(p);toast(`Moved to "${g?g.name:''}"`);di++;show()};
+$('bkeep').onclick=()=>decide('keep');$('bdel').onclick=()=>decide('del');
+$('bundo').onclick=()=>{if(!hist.length)return;di=hist.pop();const p=deck[di];p.dec=null;delete saved[keyOf(p)];persist();show()};
+$('bclose').onclick=()=>{$('deck').classList.remove('on');$('tabG').setAttribute('aria-selected','true');$('tabR').setAttribute('aria-selected','false');render()};
+$('tabR').onclick=()=>{$('tabR').setAttribute('aria-selected','true');$('tabG').setAttribute('aria-selected','false');openDeck('need')};
+$('tabG').onclick=()=>$('bclose').click();
+document.addEventListener('keydown',e=>{if(!$('deck').classList.contains('on'))return;if(e.key==='ArrowRight')decide('keep');if(e.key==='ArrowLeft')decide('del');if(e.key==='Escape')$('bclose').click()});
+}
+</script></body></html>
