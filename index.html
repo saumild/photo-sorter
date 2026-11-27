@@ -88,12 +88,12 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <div class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many. Add videos separately: your iPhone prepares each video before handing it over, which can take a while for long ones.</span><br><br>
 <div class="row" style="justify-content:center"><label class="btn primary" id="pickbtn">Add photos<input id="files" type="file" accept="image/*" multiple hidden></label><label class="btn" id="pickvid">Add videos<input id="vfiles" type="file" accept="video/*" multiple hidden></label></div><div class="mute" style="text-align:center;margin-top:6px">Pick up to about 100 at a time. Your groups stay, so just add the next 100 after.</div></div>
 <div id="stuck" class="welcome" hidden style="border:2px solid var(--coral)"><b>Reading got stuck.</b> <span class="mute">Your groups and choices are saved. Tap Restart, then add the photos again, about 100 at a time.</span><div class="row"><button class="primary" id="stuckgo">Restart</button></div></div>
-<div id="added" class="welcome" style="border:2px solid var(--coral)" hidden></div><div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
+<div id="added" class="welcome" style="border:2px solid var(--coral)" hidden></div><div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div><div class="row" style="margin-top:6px"><button id="progcancel">Cancel</button></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div><div class="mute" id="loadinfo" style="font-size:12px;margin-top:6px"></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 13</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div><div class="mute" id="loadinfo" style="font-size:12px;margin-top:6px"></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 15</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -248,10 +248,11 @@ let pickGen=0,lastStep=0,hangs=0;const tick=r=>{if(r==='TO'){if(++hangs>=3)lastS
 const onPick=async e=>{
   const fs=[...e.target.files];if(!fs.length)return;e.target.value='';const my=++pickGen;tick();$('stuck').hidden=true;
   photos.forEach(p=>{if(p.file&&!fs.includes(p.file))p.file=null});bigCache.forEach(u=>URL.revokeObjectURL(u));bigCache.clear();
-  $('prog').hidden=false;$('progt').textContent=`Reading ${fs.length} item${fs.length===1?'':'s'}…`;$('progb').style.width='2%';poolErr=null;let done=0;const fresh=[],again=[];
-  await pool(fs,8,async f=>{
+  $('prog').hidden=false;$('progt').textContent=`Reading ${fs.length} item${fs.length===1?'':'s'}…`;$('progb').style.width='2%';poolErr=null;let done=0;const fresh=[],again=[],skipped=[];const before=new Map(trips.map(t=>[t,t.list.length]));
+  for(let c0=0;c0<fs.length;c0+=20){if(my!==pickGen)return;const cf=[];
+  await pool(fs.slice(c0,c0+20),4,async f=>{
     const isV=/^video\//.test(f.type)||/\.(mov|mp4|m4v|3gp)$/i.test(f.name),isJ=!isV&&(f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name));let ex={},buf=null;
-    if(isJ){buf=await within(f.slice(0,131072).arrayBuffer(),15000,null);ex=buf?exif(buf):{};tick(buf?0:'TO')}
+    if(isJ){buf=await within(f.slice(0,131072).arrayBuffer(),15000,null);ex=buf?exif(buf):{};tick(buf?0:'TO');if(!buf){skipped.push(f);done++;return}}
     if(isV){const vm=await within(vmeta(f),4000,{});ex={lat:vm.lat,lon:vm.lon,vdate:vm.date,dur:vm.dur}}
     const date=ex.vdate||parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
     const old=byKey.get(key);
@@ -259,17 +260,17 @@ const onPick=async e=>{
     else{
       const p={id:nid++,key,file:f,name:f.name,date,lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0,dec:null,saved:0,gone:0,video:isV,dur:ex.dur||0};
       if(buf&&ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
-      add(p);fresh.push(p);touch(p)}
-    if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
+      add(p);fresh.push(p);cf.push(p);touch(p)}
+    tick();done++;$('progt').textContent=`Reading photo ${done} of ${fs.length} · ${f.name}`;$('progb').style.width=(done/fs.length*100)+'%'
   });
+  photos.sort((a,b)=>a.date-b.date);if(cf.length)placeNew(cf);await flush();await new Promise(r=>setTimeout(r,0))}
   if(poolErr&&!fresh.length&&!again.length){$('prog').hidden=true;errBox(poolErr.message||String(poolErr));return}
-  photos.sort((a,b)=>a.date-b.date);
-  const before=new Map(trips.map(t=>[t,t.list.length]));
-  if(fresh.length)placeNew(fresh);else tidy();
+  photos.sort((a,b)=>a.date-b.date);if(!fresh.length)tidy();
+  const sk=skipped.length?`<div style="color:var(--coral)">${skipped.length} photo${skipped.length===1?'':'s'} could not be read in time and ${skipped.length===1?'was':'were'} skipped (${esc(skipped.slice(0,3).map(f=>f.name).join(', '))}${skipped.length>3?', …':''}). Add ${skipped.length===1?'it':'them'} again.</div>`:'';
   const grew=trips.filter(t=>before.has(t)&&t.list.length>before.get(t)).length,made=trips.filter(t=>!before.has(t)).length;
   lastAdded=new Set(fresh);const hit=trips.filter(t=>t.list.some(p=>lastAdded.has(p)));
-  $('added').hidden=false;$('added').innerHTML=!fresh.length?`<b>Nothing new.</b> <span class="mute">All of these (${cnt(again)}) were already here.</span>`:
-    `<b>Added ${cnt(fresh)}</b><div class="mute">They're marked with an orange ring in: </div><div class="row">${hit.map(t=>`<button class="chip" data-jump="${t.id}">${esc(t.name)} (+${t.list.filter(p=>lastAdded.has(p)).length})</button>`).join('')}<button class="link" data-x="1">Hide</button></div>`;
+  $('added').hidden=false;$('added').innerHTML=!fresh.length?`<b>Nothing new.</b> <span class="mute">All of these (${cnt(again)}) were already here.</span>${sk}`:
+    `<b>Added ${cnt(fresh)}</b><div class="mute">They're marked with an orange ring in: </div><div class="row">${hit.map(t=>`<button class="chip" data-jump="${t.id}">${esc(t.name)} (+${t.list.filter(p=>lastAdded.has(p)).length})</button>`).join('')}<button class="link" data-x="1">Hide</button></div>${sk}`;
   render();const deckOn=$('deck').classList.contains('on');if(deckOn)show();const first=hit[0];if(first&&!deckOn)setTimeout(()=>jump(first.id),150);
   toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
     `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
@@ -283,12 +284,20 @@ const onPick=async e=>{
   await pool(bigs,1,async p=>{if(my!==pickGen)return;tick(await within(mkBig(p).catch(()=>{}),20000,'TO'));m++;if(m%10===0||m===bigs.length){$('progt').textContent=`Making sharp copies for Review: ${m} of ${bigs.length}`;$('progb').style.width=(m/bigs.length*100)+'%'}});
   if(my!==pickGen)return;$('prog').hidden=true;flag();render();store();if($('deck').classList.contains('on'))show();
 };
-setInterval(()=>{if($('prog').hidden||$('progt').textContent.startsWith('Waiting')||$('progt').textContent.startsWith('Still waiting'))return;if(Date.now()-lastStep>45000){pickGen++;if($('deck').classList.contains('on'))$('bclose').click();$('prog').hidden=true;$('stuck').hidden=false;flush()}},5000);
+setInterval(()=>{if($('prog').hidden||$('progt').textContent.startsWith('Waiting')||$('progt').textContent.startsWith('Still waiting')||$('progt').textContent.startsWith('Your iPhone is still'))return;if(Date.now()-lastStep>45000){pickGen++;['files','vfiles'].forEach(fresh);if($('deck').classList.contains('on'))$('bclose').click();$('prog').hidden=true;$('stuck').hidden=false;flush()}},5000);
 $('stuckgo').onclick=()=>{flush().finally(()=>location.reload())};
-$('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
-['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
-['files','vfiles'].forEach(id=>$(id).addEventListener('cancel',e=>{const inp=e.target;setTimeout(()=>{if(inp.files&&inp.files.length){onPick({target:inp});return}
-  if($('progt').textContent.startsWith('Waiting'))$('progt').textContent='Still waiting… If nothing shows up in a minute, your iPhone did not send them. Try picking fewer.'},1500)}));
+let waitT=null;
+function wire(el){const id=el.id;
+  el.addEventListener('change',e=>{clearTimeout(waitT);onPick(e);fresh(id)});
+  el.addEventListener('click',()=>{clearTimeout(waitT);$('prog').hidden=false;$('stuck').hidden=true;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';
+    waitT=setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('progt').textContent='Your iPhone is still getting the photos ready. With many photos, or photos in iCloud, this can take a minute or two. If it takes longer, tap Cancel and pick fewer.'},25000);
+    setTimeout(()=>{if($('progt').textContent.startsWith('Waiting')||$('progt').textContent.startsWith('Your iPhone is still'))$('prog').hidden=true},300000)});
+  el.addEventListener('cancel',e=>{const inp=e.target;setTimeout(()=>{if(inp.files&&inp.files.length){onPick({target:inp});fresh(id);return}
+    if($('progt').textContent.startsWith('Waiting'))$('progt').textContent='Still waiting… If nothing shows up in a minute, your iPhone did not send them. Tap Cancel and pick fewer.'},1500)})}
+/* a fresh picker each time, so one stuck pick can never block the next one */
+function fresh(id){const o=$(id);if(!o)return;const n=o.cloneNode();n.value='';o.replaceWith(n);wire(n)}
+['files','vfiles'].forEach(id=>wire($(id)));
+$('progcancel').onclick=()=>{pickGen++;clearTimeout(waitT);$('prog').hidden=true;['files','vfiles'].forEach(fresh);flag();render();store();toast('Stopped. Photos that were already read are kept. Try again with fewer photos.')};
 const ROT={3:'rotate(180deg)',6:'rotate(90deg)',8:'rotate(-90deg)'};
 function flag(){
   photos.forEach(p=>p.why=[]);
