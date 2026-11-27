@@ -32,6 +32,9 @@ button:focus-visible,.btn:focus-visible,input:focus-visible{outline:3px solid va
 .strip{display:flex;gap:4px;overflow-x:auto;scroll-snap-type:x mandatory;padding:10px 0;background:linear-gradient(var(--ink),var(--ink)) 0 0/100% 4px no-repeat}
 .strip img{flex:none;width:64px;height:64px;object-fit:cover;border-radius:6px;scroll-snap-align:start}
 .strip img.del{opacity:.25}
+.strip .vw{position:relative;flex:none;scroll-snap-align:start}.strip .vw i{position:absolute;left:3px;bottom:3px;font:600 11px Outfit,system-ui;color:#fff;background:rgba(0,0,0,.6);padding:0 5px;border-radius:6px;font-style:normal;pointer-events:none}
+.strip img{background:#1d3438}
+.sw video{width:100%;height:100%;object-fit:contain;background:#000}
 .strip img.sel{outline:3px solid var(--coral);outline-offset:-3px}
 select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:0 10px;max-width:100%}
 .tabs{position:sticky;top:0;z-index:5;display:flex;gap:6px;background:var(--bg);padding:8px 0;margin-bottom:6px}.tabs button{flex:1;justify-content:center}.tabs button[aria-selected=true]{background:var(--sea);color:#fff;border-color:var(--sea)}
@@ -71,7 +74,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 </style></head><body>
 <header><h1>Photo Sorter</h1><p>Pick photos, see them grouped into trips, swipe through the ones that need a look, then save each trip to your drive.</p></header>
 <main>
-<label class="pick" id="pick"><strong id="picktitle">Choose photos</strong><span class="mute">Your groups stay saved on this phone. Adding more photos never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary" id="pickbtn">Choose photos</span><input id="files" type="file" accept="image/*" multiple></label>
+<label class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more photos never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many.</span><br><br><span class="btn primary" id="pickbtn">Choose photos and videos</span><input id="files" type="file" accept="image/*,video/*" multiple></label>
 <div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
@@ -110,7 +113,7 @@ DB.catch(()=>{});
 async function tx(store,mode,fn){const db=await DB;return new Promise((res,rej)=>{const t=db.transaction(store,mode);const q=fn(t.objectStore(store));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})}
 const dirty=new Set();let svT=null;
 const touch=(...ps)=>ps.forEach(p=>dirty.add(p));
-const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null});
+const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null,video:!!p.video,dur:p.dur||0});
 function store(){clearTimeout(svT);svT=setTimeout(flush,250)}
 async function flush(){clearTimeout(svT);const ps=[...dirty];dirty.clear();
   try{if(ps.length)await tx('photos','readwrite',s=>{ps.forEach(p=>s.put(rec(p)))});
@@ -146,10 +149,48 @@ function tiff(v,t){
     if(z[0x8825]){const g=ifd(z[0x8825]);if(g[2]&&g[4]){const d=a=>a[0]+a[1]/60+a[2]/3600;out.lat=d(g[2])*(g[1]==='S'?-1:1);out.lon=d(g[4])*(g[3]==='W'?-1:1)}}
     return out}catch(e){return{}}
 }
+/* ---- video (MOV/MP4) date, place and length: read only the small header boxes, never the whole file ---- */
+const rdv=async(f,o,n)=>new DataView(await f.slice(o,o+n).arrayBuffer());
+const fourcc=(v,o)=>String.fromCharCode(v.getUint8(o),v.getUint8(o+1),v.getUint8(o+2),v.getUint8(o+3));
+async function fboxes(f,start,end){const out={};let o=start,g=0;
+  while(o+8<=end&&g++<400){const v=await rdv(f,o,16);if(v.byteLength<8)break;let size=v.getUint32(0),h=8;const type=fourcc(v,4);
+    if(size===1){if(v.byteLength<16)break;size=v.getUint32(8)*4294967296+v.getUint32(12);h=16}else if(size===0)size=end-o;
+    if(size<h)break;if(!out[type])out[type]=[o,size,h];o+=size}
+  return out}
+function kids(v,s,e){const out=[];let o=s;while(o+8<=e){const size=v.getUint32(o);if(size<8||o+size>e)break;out.push([fourcc(v,o+4),o,size]);o+=size}return out}
+const txt=(v,o,n)=>new TextDecoder().decode(new Uint8Array(v.buffer,v.byteOffset+o,Math.max(0,n)));
+const iso6709=s=>{const m=/([+-]\d+(?:\.\d+)?)([+-]\d+(?:\.\d+)?)/.exec(s||'');return m?{lat:+m[1],lon:+m[2]}:null};
+const isoDate=s=>{const m=/(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:\.\d+)?(Z|[+-]\d\d:?\d\d)?/.exec(s||'');if(!m)return null;
+  if(!m[7])return new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]);const z=m[7]==='Z'?0:(m[7][0]==='-'?-1:1)*(+m[7].slice(1,3)*60+ +m[7].slice(-2));
+  return new Date(Date.UTC(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6])-z*60000)};
+async function vmeta(f){const r={};try{
+  const top=await fboxes(f,0,f.size),m=top.moov;if(!m)return r;
+  const mv=await fboxes(f,m[0]+m[2],m[0]+m[1]);
+  if(mv.mvhd){const v=await rdv(f,mv.mvhd[0]+mv.mvhd[2],32),ver=v.getUint8(0);
+    const secs=ver===1?v.getUint32(4)*4294967296+v.getUint32(8):v.getUint32(4),ts=ver===1?v.getUint32(20):v.getUint32(12),du=ver===1?v.getUint32(24)*4294967296+v.getUint32(28):v.getUint32(16);
+    if(secs>2082844800)r.date=new Date((secs-2082844800)*1000);if(ts)r.dur=du/ts}
+  let meta=mv.meta;
+  if(!meta&&mv.udta&&mv.udta[1]<2e6){const u=await fboxes(f,mv.udta[0]+8,mv.udta[0]+mv.udta[1]);if(u.meta){meta=u.meta;if(u.meta[1]>=2e6)meta=null}}
+  if(meta&&meta[1]<2e6){const v=await rdv(f,meta[0],meta[1]);let ks=kids(v,8,v.byteLength);if(!ks.some(k=>k[0]==='keys'))ks=kids(v,12,v.byteLength);
+    const K=ks.find(k=>k[0]==='keys'),L=ks.find(k=>k[0]==='ilst'),names=[];
+    if(K){let o=K[1]+16;const n=v.getUint32(K[1]+12);for(let i=0;i<n&&o+8<=K[1]+K[2];i++){const sz=v.getUint32(o);if(sz<8)break;names.push(txt(v,o+8,sz-8));o+=sz}}
+    if(L)for(const [t,o,sz] of kids(v,L[1]+8,L[1]+L[2])){const idx=v.getUint32(o+4),d=kids(v,o+8,o+sz).find(k=>k[0]==='data');if(!d)continue;const val=txt(v,d[1]+16,d[2]-16),name=names[idx-1]||'';
+      if(/location\.ISO6709$/.test(name)){const g=iso6709(val);if(g)Object.assign(r,g)}
+      if(/creationdate$/.test(name)){const dt=isoDate(val);if(dt)r.date=dt}}}
+  if(r.lat==null&&mv.udta&&mv.udta[1]<2e6){const v=await rdv(f,mv.udta[0],mv.udta[1]);const x=kids(v,8,v.byteLength).find(k=>k[0]==='\xa9xyz');if(x){const g=iso6709(txt(v,x[1]+12,v.getUint16(x[1]+8)));if(g)Object.assign(r,g)}}
+}catch(e){}return r}
+function vthumb(p){return new Promise(res=>{const v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';const u=URL.createObjectURL(p.file);let done=false;
+  const fin=b=>{if(done)return;done=true;clearTimeout(t);v.removeAttribute('src');v.load();URL.revokeObjectURL(u);res(b)};const t=setTimeout(()=>fin(null),8000);
+  v.onloadeddata=()=>{try{v.currentTime=Math.min(.5,(v.duration||1)/2)}catch(e){fin(null)}};
+  v.onseeked=()=>{const s=Math.min(v.videoWidth,v.videoHeight);if(!s)return fin(null);const c=document.createElement('canvas');c.width=c.height=160;c.getContext('2d').drawImage(v,(v.videoWidth-s)/2,(v.videoHeight-s)/2,s,s,0,0,160,160);c.toBlob(b=>fin(b),'image/jpeg',.7)};
+  v.onerror=()=>fin(null);v.src=u})}
+const BLANK='data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+const mmss=s=>Math.floor(s/60)+':'+String(Math.round(s%60)).padStart(2,'0');
 const parseD=s=>{const m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||'');return m?new Date(+m[1],m[2]-1,+m[3],+m[4],+m[5],+m[6]):null};
 
 /* ---- image analysis (background, on the small preview built into each photo) ---- */
 async function analyse(p){
+  if(p.video){if(!p.thumbBlob&&p.file){const b=await vthumb(p);if(b){p.thumbBlob=b;p.thumb=URL.createObjectURL(b)}}p.hash=p.hash||'v';touch(p);return}
   let bm;
   if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else bm=await createImageBitmap(p.file);
   if(!p.thumbBlob){const t=document.createElement('canvas');t.width=t.height=160;const s=Math.min(bm.width,bm.height);t.getContext('2d').drawImage(bm,(bm.width-s)/2,(bm.height-s)/2,s,s,0,0,160,160);
@@ -169,14 +210,15 @@ $('files').addEventListener('change',async e=>{
   const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
   $('prog').hidden=false;let done=0;const fresh=[],again=[];
   await pool(fs,8,async f=>{
-    const isJ=f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name);let ex={},buf=null;
+    const isV=/^video\//.test(f.type)||/\.(mov|mp4|m4v|3gp)$/i.test(f.name),isJ=!isV&&(f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name));let ex={},buf=null;
     if(isJ){buf=await f.slice(0,131072).arrayBuffer();ex=exif(buf)}
-    const date=parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
+    if(isV){const vm=await vmeta(f);ex={lat:vm.lat,lon:vm.lon,vdate:vm.date,dur:vm.dur}}
+    const date=ex.vdate||parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
     const old=byKey.get(key);
     if(old){old.file=f;again.push(old)}
     else{
-      const p={id:nid++,key,file:f,name:f.name,date,lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0,dec:null,saved:0,gone:0};
-      if(ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
+      const p={id:nid++,key,file:f,name:f.name,date,lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0,dec:null,saved:0,gone:0,video:isV,dur:ex.dur||0};
+      if(buf&&ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
       add(p);fresh.push(p);touch(p)}
     if(++done%25===0||done===fs.length){$('progt').textContent=`Reading dates and places: ${done} of ${fs.length}`;$('progb').style.width=(done/fs.length*100)+'%'}
   });
@@ -184,9 +226,9 @@ $('files').addEventListener('change',async e=>{
   const before=new Map(trips.map(t=>[t,t.list.length]));
   if(fresh.length)placeNew(fresh);else tidy();
   const grew=trips.filter(t=>before.has(t)&&t.list.length>before.get(t)).length,made=trips.filter(t=>!before.has(t)).length;
-  toast(!fresh.length?`All ${again.length} of these photos were already here. Your groups are unchanged.`:
-    `Added ${fresh.length} new photo${fresh.length===1?'':'s'}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
-  const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Checking for blurry and similar photos in the background…';
+  toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
+    `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
+  const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
   await pool(todo,4,async p=>{await analyse(p);n++;
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
     if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}});
@@ -258,18 +300,20 @@ const binList=()=>photos.filter(p=>p.dec==='del'&&!p.gone);
 const needs=(p,t)=>!p.dec&&!p.gone&&(p.why.length>0||t.name==='Unsorted');
 const needCount=()=>trips.reduce((n,t)=>n+t.list.filter(p=>needs(p,t)).length,0);
 
+const vw=(p,img)=>p.video?`<span class="vw">${img}<i>▶ ${p.dur?mmss(p.dur):''}</i></span>`:img;
+const cnt=ps=>{const v=ps.filter(p=>p.video).length,f=ps.length-v;return [f&&`${f} photo${f===1?'':'s'}`,v&&`${v} video${v===1?'':'s'}`].filter(Boolean).join(', ')||'0 photos'};
 function card(t,i){
   const st=state(t),{live,keep,uns,bin}=parts(t),need=t.list.filter(p=>needs(p,t)).length,lastSaved=Math.max(0,...keep.map(p=>p.saved||0));
   if(st==='done'){const g=Math.max(...t.list.map(p=>p.gone||0));
-    return `<section class="trip done-g"><b>${esc(t.name)}</b><div class="mute">${esc(range(t.start,t.end))} · ${t.list.length} photo${t.list.length===1?'':'s'}</div><div><span class="st ok">Done · saved and removed from phone ${when(g)}</span></div><div class="row"><button data-ungone="${i}">They're still on my phone</button></div></section>`}
+    return `<section class="trip done-g"><b>${esc(t.name)}</b><div class="mute">${esc(range(t.start,t.end))} · ${cnt(t.list)}</div><div><span class="st ok">Done · saved and removed from phone ${when(g)}</span></div><div class="row"><button data-ungone="${i}">They're still on my phone</button></div></section>`}
   const badge={new:'<span class="st todo">Not saved yet</span>',partial:`<span class="st todo">${uns.length} new photo${uns.length===1?'':'s'} not saved yet</span>`,
     saved:`<span class="st ok">Saved to drive ${when(lastSaved)}</span> <span class="mute">Next: Delete trip to free up space</span>`,empty:'<span class="st">Every photo is in To delete</span>'}[st];
   const saveLbl=st==='partial'?`Save ${uns.length} new`:'Save trip';
   const show=live.filter(p=>p.dec!=='del');
   return `<section class="trip ${t.kind}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
-  <div class="mute">${esc(range(t.start,t.end))} · ${keep.length} photo${keep.length===1?'':'s'}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${bin?` · ${bin} in To delete`:''}</div>
+  <div class="mute">${esc(range(t.start,t.end))} · ${cnt(keep)}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${bin?` · ${bin} in To delete`:''}</div>
   <div class="stline">${badge}</div>
-  <div class="strip">${show.map(p=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" class="${sel.has(p)?'sel':''} ${p.saved?'sv':''}">`).join('')}</div>
+  <div class="strip">${show.map(p=>vw(p,`<img loading="lazy" src="${p.thumb||BLANK}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" class="${sel.has(p)?'sel':''} ${p.saved?'sv':''}">`)).join('')}</div>
   <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'&&!t.custom?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
   <div class="row">
   ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,uns))}">${saveLbl}</a>`:''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,live))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
@@ -285,11 +329,11 @@ function render(){
   const ix=t=>trips.indexOf(t),by=s=>trips.filter(t=>s.includes(state(t)));
   const toSave=by(['new','partial']),saved=by(['saved','empty']),done=by(['done']);
   $('tabs').hidden=$('hint').hidden=!trips.length;
-  $('pick').classList.toggle('slim',trips.length>0);$('picktitle').textContent=trips.length?'Add more photos':'Choose photos';$('pickbtn').textContent=trips.length?'Add more photos':'Choose photos';
+  $('pick').classList.toggle('slim',trips.length>0);$('picktitle').textContent=trips.length?'Add more':'Choose photos and videos';$('pickbtn').textContent=trips.length?'Add more photos and videos':'Choose photos and videos';
   const chips=[toSave.length&&[`${toSave.length} group${toSave.length===1?'':'s'} to save`,'sec-save'],saved.length&&[`${saved.length} saved, still on phone`,'sec-saved'],bins.length&&[`${bins.length} in To delete`,'sec-bin'],need&&[`${need} to review`,'review']].filter(Boolean);
   $('summary').innerHTML=!trips.length?'':`<div class="welcome"><b>${chips.length?'Where you left off':'All caught up'}</b>${chips.length?`<div class="row">${chips.map(([l,s])=>`<button class="chip" data-go="${s}">${esc(l)}</button>`).join('')}</div>`:'<div class="mute">Everything is saved and cleaned up. Add more photos any time; your groups stay here.</div>'}</div>`;
   const binCard=bins.length?`<section class="trip bin" id="sec-bin"><b class="h">To delete (${bins.length})</b><div class="mute">Photos you swiped left, from every group. Tap one to put it back.</div>
-    <div class="strip">${bins.map(p=>`<img loading="lazy" src="${p.thumb||''}" style="transform:${ROT[p.rot]||'none'}" alt="Put back" data-back="${p.id}">`).join('')}</div>
+    <div class="strip">${bins.map(p=>vw(p,`<img loading="lazy" src="${p.thumb||BLANK}" style="transform:${ROT[p.rot]||'none'}" alt="Put back" data-back="${p.id}">`)).join('')}</div>
     <div class="row">${HOSTED?`<a class="btn primary" data-act="bin" href="${esc(scURL('Delete trip','To delete',bins))}">Delete ${bins.length} from phone</a>`:'<span class="mute">Delete these in the Photos app.</span>'}</div></section>`:'';
   $('trips').innerHTML=binCard+
     (toSave.length?`<h2 class="sec" id="sec-save">To save (${toSave.length})</h2>`+toSave.map(t=>card(t,ix(t))).join(''):'')+
@@ -390,7 +434,7 @@ let bigU=null;const bigURL=p=>{if(bigU)URL.revokeObjectURL(bigU);bigU=null;if(!p
 function show(){
   $('wrong').classList.remove('on');
   const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file?'':' · small preview (add the photos again for a sharp view)'):'All done here. Pick another set above, or tap Done.';
-  $('cw').innerHTML=p?`<div class="sw" id="sw"><img src="${bigURL(p)}" alt="Photo to review" style="${p.file?'':`transform:${ROT[p.rot]||'none'}`}"><span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
+  $('cw').innerHTML=p?`<div class="sw" id="sw">${p.video&&p.file?`<video src="${bigURL(p)}" controls playsinline muted preload="metadata"></video>`:`<img src="${p.video?p.thumb||'':bigURL(p)}" alt="Photo to review" style="${p.file&&!p.video?'':`transform:${ROT[p.rot]||'none'}`}">`}<span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
   if(p)drag($('sw'));
   $('bwrong').textContent=g&&g.name==='Unsorted'?'Move to group':'Wrong group';if(g&&g.name==='Unsorted')$('bwrong').click();
 }
