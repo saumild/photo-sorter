@@ -88,12 +88,13 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <div class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many. Add videos separately: your iPhone prepares each video before handing it over, which can take a while for long ones.</span><br><br>
 <div class="row" style="justify-content:center"><label class="btn primary" id="pickbtn">Add photos<input id="files" type="file" accept="image/*" multiple hidden></label><label class="btn" id="pickvid">Add videos<input id="vfiles" type="file" accept="video/*" multiple hidden></label></div><div class="mute" style="text-align:center;margin-top:6px">Pick up to about 100 at a time. Your groups stay, so just add the next 100 after.</div></div>
 <div id="stuck" class="welcome" hidden style="border:2px solid var(--coral)"><b>Reading got stuck.</b> <span class="mute">Your groups and choices are saved. Tap Restart, then add the photos again, about 100 at a time.</span><div class="row"><button class="primary" id="stuckgo">Restart</button></div></div>
+<div id="confirm" class="welcome" style="border:2px solid var(--keep)" hidden></div>
 <div id="added" class="welcome" style="border:2px solid var(--coral)" hidden></div><div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div><div class="row" style="margin-top:6px"><button id="progcancel">Cancel</button></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div><div class="mute" id="loadinfo" style="font-size:12px;margin-top:6px"></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 15</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div><div class="mute" id="loadinfo" style="font-size:12px;margin-top:6px"></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 16</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -372,7 +373,7 @@ function card(t,i){
     return `<section class="trip done-g"><b>${esc(t.name)}</b><div class="mute">${esc(range(t.start,t.end))} · ${cnt(t.list)}</div><div><span class="st ok">Done · saved and removed from phone ${when(g)}</span></div><div class="row"><button data-ungone="${i}">They're still on my phone</button></div></section>`}
   const badge={new:'<span class="st todo">Not saved yet</span>',partial:`<span class="st todo">${uns.length} new photo${uns.length===1?'':'s'} not saved yet</span>`,
     saved:`<span class="st ok">Saved to drive ${when(lastSaved)}</span> <span class="mute">Next: Delete trip to free up space</span>`,empty:'<span class="st">Every photo is in To delete</span>'}[st];
-  const upart=uns.slice(0,PART),saveLbl=uns.length>PART?`Save next ${PART} (${uns.length} not saved yet)`:st==='partial'?`Save ${uns.length} new`:'Save trip';
+  const upart=byDate(uns).slice(0,PART),dpart=byDate(live).slice(0,DPART),delLbl=live.length>DPART?`Delete next ${DPART} (${live.length} left)`:'Delete trip',saveLbl=uns.length>PART?`Save next ${PART} (${uns.length} not saved yet)`:st==='partial'?`Save ${uns.length} new`:'Save trip';
   const show=live.filter(p=>p.dec!=='del');
   return `<section class="trip ${t.kind}" data-gid="${t.id}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
   <div class="mute">${esc(range(t.start,t.end))} · ${cnt(keep)}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${bin?` · ${bin} in To delete`:''}</div>
@@ -380,7 +381,7 @@ function card(t,i){
   <div class="strip">${show.map(p=>vw(p,`<img loading="lazy" src="${p.thumb||BLANK}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" class="${sel.has(p)?'sel':''} ${p.saved?'sv':''} ${lastAdded.has(p)?'nw':''}">`)).join('')}</div>
   <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'&&!t.custom?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
   <div class="row">
-  ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,upart))}">${saveLbl}</a>`:''}${uns.length>PART?'<div class="mute" style="flex-basis:100%">Big groups save in parts of '+PART+'. They all go into the same folder. Come back and tap Save again after each part.</div>':''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,live))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
+  ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,upart))}">${saveLbl}</a>`:''}${uns.length>PART?'<div class="mute" style="flex-basis:100%">Big groups save '+PART+' at a time. They all go into the same folder. After each part the app asks if it worked, then tap Save again.</div>':''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,dpart))}">${delLbl}</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
   <button data-all="${i}">Look through all</button>
   ${trips.length>1?`<select data-into="${i}" aria-label="Merge into"><option value="">Merge into…</option>${trips.map((o,k)=>k===i||state(o)==='done'?'':`<option value="${k}">${esc(o.name)}</option>`).join('')}</select>`:''}
   <button data-flip="${i}">Make it ${NEXT[t.kind]==='home'?'home':'a'+(NEXT[t.kind]==='occasion'?'n occasion':' trip')}</button>
@@ -398,7 +399,7 @@ function render(){
   $('summary').innerHTML=!trips.length?'':`<div class="welcome"><b>${chips.length?'Where you left off':'All caught up'}</b>${chips.length?`<div class="row">${chips.map(([l,s])=>`<button class="chip" data-go="${s}">${esc(l)}</button>`).join('')}</div>`:'<div class="mute">Everything is saved and cleaned up. Add more photos any time; your groups stay here.</div>'}</div>`;
   const binCard=bins.length?`<section class="trip bin" id="sec-bin"><b class="h">To delete (${bins.length})</b><div class="mute">Photos you swiped left, from every group. Tap one to put it back.</div>
     <div class="strip">${bins.map(p=>vw(p,`<img loading="lazy" src="${p.thumb||BLANK}" style="transform:${ROT[p.rot]||'none'}" alt="Put back" data-back="${p.id}">`)).join('')}</div>
-    <div class="row">${HOSTED?`<a class="btn primary" data-act="bin" href="${esc(scURL('Delete trip','To delete',bins))}">Delete ${bins.length} from phone</a>`:'<span class="mute">Delete these in the Photos app.</span>'}</div></section>`:'';
+    <div class="row">${HOSTED?`<a class="btn primary" data-act="bin" href="${esc(scURL('Delete trip','To delete',byDate(bins).slice(0,DPART)))}">${bins.length>DPART?`Delete next ${DPART} (${bins.length} left)`:`Delete ${bins.length} from phone`}</a>`:'<span class="mute">Delete these in the Photos app.</span>'}</div></section>`:'';
   $('trips').innerHTML=binCard+
     (toSave.length?`<h2 class="sec" id="sec-save">To save (${toSave.length})</h2>`+toSave.map(t=>card(t,ix(t))).join(''):'')+
     (saved.length?`<h2 class="sec" id="sec-saved">Saved, still on your phone (${saved.length})</h2>`+saved.map(t=>card(t,ix(t))).join(''):'')+
@@ -432,11 +433,19 @@ $('movenew').onclick=()=>{const first=[...sel].sort((a,b)=>a.date-b.date)[0];con
 $('moveout').onclick=()=>{let u=trips.find(t=>t.name==='Unsorted'&&state(t)!=='done');if(!u){u={id:gid++,kind:'home',list:[],name:'Unsorted',custom:true};trips.push(u)}moveSel(u);toast('Moved to "Unsorted". Move them to the right group from there.')};
 $('movex').onclick=()=>{sel.clear();bar();render()};
 $('trips').addEventListener('input',e=>{if(e.target.dataset.i){const t=trips[e.target.dataset.i];t.name=e.target.value;t.custom=true}});
+let pend=null;
+function ask(kind,list,what){pend={kind,list,what};$('confirm').hidden=true}
+function showAsk(){if(!pend)return;const n=pend.list.length,pl=n===1?'':'s';
+  $('confirm').innerHTML=`<b>Did "${pend.what}" (${n} photo${pl}) finish with no error?</b><div class="mute">The Shortcut runs in another app, so I can't see the result. I only mark these ${pend.kind==='save'?'saved':'deleted'} if you say yes.</div><div class="row"><button class="primary" id="cyes">Yes, it worked</button><button id="cno">No, it showed an error</button></div>`;$('confirm').hidden=false;$('confirm').scrollIntoView({block:'nearest'})}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)setTimeout(showAsk,400)});window.addEventListener('pageshow',()=>setTimeout(showAsk,400));
+$('confirm').addEventListener('click',e=>{const id=e.target.id;if(id==='cyes'){const q=pend;pend=null;$('confirm').hidden=true;mark(q.kind,q.list)}
+  else if(id==='cno'){const q=pend;pend=null;$('confirm').innerHTML=`<b>Nothing was marked, so it is safe to try again.</b><div class="mute" style="margin-top:6px">The error "PHPhotosErrorDomain -1" comes from iOS Photos, not this page. It usually means one photo or video could not be read. The most common reasons:<br>• The photo is in iCloud and not downloaded to the phone. In Photos, open the trip once and wait for the cloud icon to finish, or connect to Wi-Fi.<br>• Shortcuts does not have full Photos access: Settings > Apps > Shortcuts > Photos > Full Access.<br>• Too many at once. This app now sends ${PART} at a time, so just tap the button again for the next part.<br>• Large videos can fail. Save those on their own.</div><div class="row"><button class="link" id="chide">Hide</button></div>`}
+  else if(id==='chide'){$('confirm').hidden=true}});
 function mark(kind,list){const now=Date.now();list.forEach(p=>{if(kind==='save')p.saved=now;else p.gone=now});if(kind!=='save'){const ks=list.filter(p=>p.big).map(p=>p.key);if(ks.length)tx('big','readwrite',s=>ks.forEach(k=>s.delete(k))).catch(()=>{})}touch(...list);flush();
-  setTimeout(()=>{render();toast(kind==='save'?`Marked ${list.length} photo${list.length===1?'':'s'} as saved. If the Shortcut failed, tap "Mark as not saved".`:`Marked ${list.length} photo${list.length===1?'':'s'} as removed from your phone.`)},400)}
+  setTimeout(()=>{render();toast(kind==='save'?`Marked ${list.length} photo${list.length===1?'':'s'} as saved.`:`Marked ${list.length} photo${list.length===1?'':'s'} as removed from your phone.`)},400)}
 $('trips').addEventListener('click',e=>{
   const a=e.target.closest('a[data-act]');
-  if(a){const act=a.dataset.act;if(act==='bin'){mark('gone',binList());return}const t=trips[a.dataset.g],{live,uns}=parts(t);mark(act==='save'?'save':'gone',act==='save'?uns.slice(0,PART):live);return}
+  if(a){const act=a.dataset.act;if(act==='bin'){ask('gone',byDate(binList()).slice(0,DPART),'Delete from phone');return}const t=trips[a.dataset.g],{live,uns}=parts(t);act==='save'?ask('save',byDate(uns).slice(0,PART),`Save to drive`):ask('gone',byDate(live).slice(0,DPART),'Delete from phone');return}
   const bk=e.target.closest('img[data-back]');if(bk){const p=byId.get(+bk.dataset.back);p.dec=null;touch(p);const g=groupOf(p);toast(`Put back in "${g?g.name:''}"`);render();return}
   const go=e.target.closest('[data-go]');
   const im=e.target.closest('img[data-id]');if(im){const p=byId.get(+im.dataset.id);sel.has(p)?sel.delete(p):sel.add(p);im.classList.toggle('sel');bar();return}
@@ -471,7 +480,7 @@ async function saveTrip(t){
   const tr=trips.indexOf(t);setTimeout(()=>{const el=document.querySelector(`[data-save="${tr}"]`);el&&el.closest('.trip').querySelector('.send')&&el.closest('.trip').querySelector('.send').scrollIntoView({behavior:'smooth',block:'center'})},50);
   try{await Promise.race([navigator.clipboard.writeText(t.name),new Promise((_,r)=>setTimeout(r,1500))]);t.copied=true;render()}catch(err){}
 }
-const PART=150;
+const PART=40,DPART=40,byDate=a=>[...a].sort((x,y)=>x.date-y.date);
 const HOSTED=/github\.io$/.test(location.hostname)||location.hash==='#hosted-test';
 function scURL(name,title,ps){const ds=ps.map(p=>+p.date),s=new Date(Math.min(...ds)-60000),e=new Date(Math.max(...ds)+60000);
   const text=[title.replace(/[\/\\:\n]/g,'-').trim()||'Trip',fmt(s),fmt(e),ps.map(p=>stamp(p.date)).join(',')||'none'].join('\n');
