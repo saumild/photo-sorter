@@ -199,13 +199,13 @@ async function analyse(p){
   let bm;
   if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else bm=await createImageBitmap(p.file);
   if(!p.thumbBlob){const t=document.createElement('canvas');t.width=t.height=160;const s=Math.min(bm.width,bm.height);t.getContext('2d').drawImage(bm,(bm.width-s)/2,(bm.height-s)/2,s,s,0,0,160,160);
-    p.thumbBlob=await new Promise(r=>t.toBlob(r,'image/jpeg',.7));p.thumb=URL.createObjectURL(p.thumbBlob);p.rot=0}
+    p.thumbBlob=await new Promise(r=>t.toBlob(r,'image/jpeg',.7));t.width=t.height=0;p.thumb=URL.createObjectURL(p.thumbBlob);p.rot=0}
   const c=document.createElement('canvas');c.width=c.height=96;const bx=c.getContext('2d',{willReadFrequently:true});bx.imageSmoothingQuality='high';bx.drawImage(bm,0,0,96,96);
   const g=document.createElement('canvas');g.width=9;g.height=8;const gx=g.getContext('2d',{willReadFrequently:true});gx.imageSmoothingQuality='high';gx.drawImage(c,0,0,9,8);
   const d=gx.getImageData(0,0,9,8).data;let hash='';for(let y=0;y<8;y++)for(let i=0;i<8;i++){const a=(y*9+i)*4,b=a+4;hash+=(d[a]+d[a+1]+d[a+2])>(d[b]+d[b+1]+d[b+2])?'1':'0'}
   const px=bx.getImageData(0,0,96,96).data,gr=new Float32Array(96*96);for(let i=0;i<gr.length;i++)gr[i]=px[i*4]*.3+px[i*4+1]*.59+px[i*4+2]*.11;
   let sum=0,sq=0,n=0;for(let y=1;y<95;y++)for(let i=1;i<95;i++){const k=y*96+i,l=gr[k-1]+gr[k+1]+gr[k-96]+gr[k+96]-4*gr[k];sum+=l;sq+=l*l;n++}
-  bm.close&&bm.close();p.hash=hash;p.sharp=sq/n-(sum/n)**2;touch(p);
+  bm.close&&bm.close();c.width=c.height=g.width=g.height=0;p.hash=hash;p.sharp=sq/n-(sum/n)**2;touch(p);
 }
 let poolErr=null;async function pool(items,n,fn){let i=0;await Promise.all(Array.from({length:n},async()=>{while(i<items.length){const k=i++;try{await fn(items[k],k)}catch(e){poolErr=e;console.warn(e)}}}))}
 const within=(p,ms,v)=>Promise.race([p,new Promise(r=>setTimeout(()=>r(v),ms))]);
@@ -240,9 +240,11 @@ const onPick=async e=>{
   toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
     `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
   const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
-  await pool(todo,4,async p=>{await analyse(p);n++;
+  const quick=todo.filter(p=>p.thumbBlob&&!p.video),slow=todo.filter(p=>!(p.thumbBlob&&!p.video));
+  const step=async p=>{await analyse(p);n++;
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
-    if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}});
+    if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}};
+  await pool(quick,4,step);await pool(slow,1,step);
   $('prog').hidden=true;flag();render();store();
 };
 $('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
@@ -321,7 +323,7 @@ function card(t,i){
     return `<section class="trip done-g"><b>${esc(t.name)}</b><div class="mute">${esc(range(t.start,t.end))} · ${cnt(t.list)}</div><div><span class="st ok">Done · saved and removed from phone ${when(g)}</span></div><div class="row"><button data-ungone="${i}">They're still on my phone</button></div></section>`}
   const badge={new:'<span class="st todo">Not saved yet</span>',partial:`<span class="st todo">${uns.length} new photo${uns.length===1?'':'s'} not saved yet</span>`,
     saved:`<span class="st ok">Saved to drive ${when(lastSaved)}</span> <span class="mute">Next: Delete trip to free up space</span>`,empty:'<span class="st">Every photo is in To delete</span>'}[st];
-  const saveLbl=st==='partial'?`Save ${uns.length} new`:'Save trip';
+  const upart=uns.slice(0,PART),saveLbl=uns.length>PART?`Save next ${PART} (${uns.length} not saved yet)`:st==='partial'?`Save ${uns.length} new`:'Save trip';
   const show=live.filter(p=>p.dec!=='del');
   return `<section class="trip ${t.kind}" data-gid="${t.id}"><input class="name" data-i="${i}" value="${esc(t.name)}" aria-label="Trip name">
   <div class="mute">${esc(range(t.start,t.end))} · ${cnt(keep)}${t.kind==='trip'&&t.far?` · about ${Math.round(t.far).toLocaleString()} mi from home`:''}${bin?` · ${bin} in To delete`:''}</div>
@@ -329,7 +331,7 @@ function card(t,i){
   <div class="strip">${show.map(p=>vw(p,`<img loading="lazy" src="${p.thumb||BLANK}" style="transform:${ROT[p.rot]||'none'}" alt="" data-id="${p.id}" data-t="${i}" class="${sel.has(p)?'sel':''} ${p.saved?'sv':''} ${lastAdded.has(p)?'nw':''}">`)).join('')}</div>
   <div>${need?`<span class="tag">${need} need a look</span>`:''}${t.kind==='occasion'&&!t.custom?'<span class="tag" style="background:#e3f4ee;color:#11704b">Occasion · rename it, e.g. Diwali party</span>':''}</div>
   <div class="row">
-  ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,uns))}">${saveLbl}</a>`:''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,live))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
+  ${HOSTED?`${uns.length?`<a class="btn primary" data-act="save" data-g="${i}" href="${esc(scURL('Save trip',t.name,upart))}">${saveLbl}</a>`:''}${uns.length>PART?'<div class="mute" style="flex-basis:100%">Big groups save in parts of '+PART+'. They all go into the same folder. Come back and tap Save again after each part.</div>':''}<a class="btn ${st==='saved'?'primary':''}" ${st==='saved'?'':'style="color:var(--coral)"'} data-act="del" data-g="${i}" href="${esc(scURL('Delete trip',t.name,live))}">Delete trip</a>`:`<button data-save="${i}" class="${need?'':'primary'}">Save trip</button>`}
   <button data-all="${i}">Look through all</button>
   ${trips.length>1?`<select data-into="${i}" aria-label="Merge into"><option value="">Merge into…</option>${trips.map((o,k)=>k===i||state(o)==='done'?'':`<option value="${k}">${esc(o.name)}</option>`).join('')}</select>`:''}
   <button data-flip="${i}">Make it ${NEXT[t.kind]==='home'?'home':'a'+(NEXT[t.kind]==='occasion'?'n occasion':' trip')}</button>
@@ -385,7 +387,7 @@ function mark(kind,list){const now=Date.now();list.forEach(p=>{if(kind==='save')
   setTimeout(()=>{render();toast(kind==='save'?`Marked ${list.length} photo${list.length===1?'':'s'} as saved. If the Shortcut failed, tap "Mark as not saved".`:`Marked ${list.length} photo${list.length===1?'':'s'} as removed from your phone.`)},400)}
 $('trips').addEventListener('click',e=>{
   const a=e.target.closest('a[data-act]');
-  if(a){const act=a.dataset.act;if(act==='bin'){mark('gone',binList());return}const t=trips[a.dataset.g],{live,uns}=parts(t);mark(act==='save'?'save':'gone',act==='save'?uns:live);return}
+  if(a){const act=a.dataset.act;if(act==='bin'){mark('gone',binList());return}const t=trips[a.dataset.g],{live,uns}=parts(t);mark(act==='save'?'save':'gone',act==='save'?uns.slice(0,PART):live);return}
   const bk=e.target.closest('img[data-back]');if(bk){const p=byId.get(+bk.dataset.back);p.dec=null;touch(p);const g=groupOf(p);toast(`Put back in "${g?g.name:''}"`);render();return}
   const go=e.target.closest('[data-go]');
   const im=e.target.closest('img[data-id]');if(im){const p=byId.get(+im.dataset.id);sel.has(p)?sel.delete(p):sel.add(p);im.classList.toggle('sel');bar();return}
@@ -420,6 +422,7 @@ async function saveTrip(t){
   const tr=trips.indexOf(t);setTimeout(()=>{const el=document.querySelector(`[data-save="${tr}"]`);el&&el.closest('.trip').querySelector('.send')&&el.closest('.trip').querySelector('.send').scrollIntoView({behavior:'smooth',block:'center'})},50);
   try{await Promise.race([navigator.clipboard.writeText(t.name),new Promise((_,r)=>setTimeout(r,1500))]);t.copied=true;render()}catch(err){}
 }
+const PART=150;
 const HOSTED=/github\.io$/.test(location.hostname)||location.hash==='#hosted-test';
 function scURL(name,title,ps){const ds=ps.map(p=>+p.date),s=new Date(Math.min(...ds)-60000),e=new Date(Math.max(...ds)+60000);
   const text=[title.replace(/[\/\\:\n]/g,'-').trim()||'Trip',fmt(s),fmt(e),ps.map(p=>stamp(p.date)).join(',')||'none'].join('\n');
