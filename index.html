@@ -87,12 +87,13 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <main>
 <div class="pick" id="pick"><strong id="picktitle">Choose photos and videos</strong><span class="mute">Your groups stay saved on this phone. Adding more never clears them. Tip: do one trip or one month at a time. In the picker, tap and drag across photos to select many. Add videos separately: your iPhone prepares each video before handing it over, which can take a while for long ones.</span><br><br>
 <div class="row" style="justify-content:center"><label class="btn primary" id="pickbtn">Add photos<input id="files" type="file" accept="image/*" multiple hidden></label><label class="btn" id="pickvid">Add videos<input id="vfiles" type="file" accept="video/*" multiple hidden></label></div><div class="mute" style="text-align:center;margin-top:6px">Pick up to about 100 at a time. Your groups stay, so just add the next 100 after.</div></div>
+<div id="stuck" class="welcome" hidden style="border:2px solid var(--coral)"><b>Reading got stuck.</b> <span class="mute">Your groups and choices are saved. Tap Restart, then add the photos again, about 100 at a time.</span><div class="row"><button class="primary" id="stuckgo">Restart</button></div></div>
 <div id="added" class="welcome" style="border:2px solid var(--coral)" hidden></div><div id="prog" hidden><div class="mute" id="progt"></div><div class="bar"><i id="progb"></i></div></div>
 <details id="opts"><summary class="mute">Trip settings</summary><div class="settings">
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 11</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 12</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -119,21 +120,23 @@ const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'
 const toast=m=>{const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',4000)};
 try{myHome=JSON.parse(localStorage.getItem('ts-home')||'null');named=JSON.parse(localStorage.getItem('ts-places')||'[]')}catch(e){}
 
+const asBlob=d=>!d?null:d instanceof Blob?d:new Blob([d],{type:'image/jpeg'});
 /* ---- storage on this phone (IndexedDB): groups, decisions, small previews. Photos themselves are never copied. ---- */
 const DB=new Promise((res,rej)=>{try{const r=indexedDB.open('photo-sorter',2);r.onupgradeneeded=()=>{const d=r.result,h=n=>d.objectStoreNames.contains(n);if(!h('photos'))d.createObjectStore('photos',{keyPath:'key'});if(!h('kv'))d.createObjectStore('kv');if(!h('big'))d.createObjectStore('big')};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}catch(e){rej(e)}});
 DB.catch(()=>{});
 async function tx(store,mode,fn){const db=await DB;return new Promise((res,rej)=>{const t=db.transaction(store,mode);const q=fn(t.objectStore(store));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})}
 const dirty=new Set();let svT=null;
 const touch=(...ps)=>ps.forEach(p=>dirty.add(p));
-const rec=p=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:p.thumbBlob||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null,video:!!p.video,dur:p.dur||0,big:!!p.big});
+const rec=(p,tb)=>({key:p.key,name:p.name,date:+p.date,lat:p.lat,lon:p.lon,make:p.make,shot:p.shot,rot:p.rot,thumb:tb||null,hash:p.hash||null,sharp:p.sharp,dec:p.dec||null,kind:p.kind,dist:p.dist,saved:p.saved||0,gone:p.gone||0,from:p.from||null,video:!!p.video,dur:p.dur||0,big:!!p.big});
 function store(){clearTimeout(svT);svT=setTimeout(flush,250)}
 async function flush(){clearTimeout(svT);const ps=[...dirty];dirty.clear();
-  try{if(ps.length)await tx('photos','readwrite',s=>{ps.forEach(p=>s.put(rec(p)))});
+  try{const tbs=await Promise.all(ps.map(p=>p.thumbBlob&&!p.thumbBad?p.thumbBlob.arrayBuffer().catch(()=>null):null));
+    if(ps.length)await tx('photos','readwrite',s=>{ps.forEach((p,i)=>s.put(rec(p,tbs[i])))});
     await tx('kv','readwrite',s=>s.put(trips.map(t=>({id:t.id,name:t.name,kind:t.kind,custom:!!t.custom,keys:t.list.map(p=>p.key)})),'groups'))}catch(e){console.warn('save failed',e)}}
 document.addEventListener('visibilitychange',()=>{if(document.hidden)flush()});
 async function load(){
   try{const [recs,gs]=await Promise.all([tx('photos','readonly',s=>s.getAll()),tx('kv','readonly',s=>s.get('groups'))]);
-    for(const r of recs||[]){const p={...r,id:nid++,date:new Date(r.date),why:[],thumbBlob:r.thumb||null};delete p.thumb;if(p.thumbBlob)p.thumb=URL.createObjectURL(p.thumbBlob);add(p)}
+    for(const r of recs||[]){const p={...r,id:nid++,date:new Date(r.date),why:[],thumbBlob:asBlob(r.thumb)};delete p.thumb;if(p.thumbBlob)p.thumb=URL.createObjectURL(p.thumbBlob);add(p)}
     trips=(gs||[]).map(g=>({id:g.id,name:g.name,kind:g.kind,custom:g.custom,list:g.keys.map(k=>byKey.get(k)).filter(Boolean)})).filter(t=>t.list.length);
     gid=Math.max(0,...trips.map(t=>t.id||0))+1;trips.forEach(t=>{if(!t.id)t.id=gid++});
   }catch(e){console.warn('load failed',e)}
@@ -203,10 +206,11 @@ const parseD=s=>{const m=/(\d{4}):(\d\d):(\d\d) (\d\d):(\d\d):(\d\d)/.exec(s||''
 /* ---- sharp previews for Review, kept on this phone so Review stays sharp after the app is closed ---- */
 async function mkBig(p){if(p.video||p.big||!p.file)return;const bm=await createImageBitmap(p.file);const k=Math.min(1,1600/Math.max(bm.width,bm.height));
   const c=document.createElement('canvas');c.width=Math.round(bm.width*k);c.height=Math.round(bm.height*k);c.getContext('2d').drawImage(bm,0,0,c.width,c.height);bm.close&&bm.close();
-  const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.8));c.width=c.height=0;if(!b)return;await tx('big','readwrite',s=>s.put(b,p.key));p.big=true;touch(p)}
+  const b=await new Promise(r=>c.toBlob(r,'image/jpeg',.8));c.width=c.height=0;if(!b)return;const ab=await b.arrayBuffer();await tx('big','readwrite',s=>s.put(ab,p.key));p.big=true;touch(p)}
 const bigCache=new Map();
 async function bigSrc(p){if(!p||p.video)return null;if(bigCache.has(p.key))return bigCache.get(p.key);let u=null;
-  if(p.file)u=URL.createObjectURL(p.file);else if(p.big){try{const b=await tx('big','readonly',s=>s.get(p.key));if(b)u=URL.createObjectURL(b)}catch(e){}}
+  if(p.big){try{const b=await tx('big','readonly',s=>s.get(p.key));if(b)u=URL.createObjectURL(asBlob(b))}catch(e){}}
+  if(!u&&p.file)u=URL.createObjectURL(p.file);
   if(u){bigCache.set(p.key,u);const keep=new Set([di-1,di,di+1,di+2].map(i=>deck[i]&&deck[i].key));for(const[k,v]of bigCache)if(!keep.has(k)){URL.revokeObjectURL(v);bigCache.delete(k)}}
   return u}
 const preload=p=>bigSrc(p).then(u=>{if(u){const im=new Image();im.src=u;im.decode&&im.decode().catch(()=>{})}});
@@ -214,7 +218,7 @@ const preload=p=>bigSrc(p).then(u=>{if(u){const im=new Image();im.src=u;im.decod
 async function analyse(p){
   if(p.video){if(!p.thumbBlob&&p.file){const b=await vthumb(p);if(b){p.thumbBlob=b;p.thumb=URL.createObjectURL(b)}}p.hash=p.hash||'v';touch(p);return}
   let bm;
-  if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else bm=await createImageBitmap(p.file);
+  if(p.thumbBlob)bm=await createImageBitmap(p.thumbBlob);else{bm=await createImageBitmap(p.file);p.thumbBad=false}
   if(!p.thumbBlob){const t=document.createElement('canvas');t.width=t.height=160;const s=Math.min(bm.width,bm.height);t.getContext('2d').drawImage(bm,(bm.width-s)/2,(bm.height-s)/2,s,s,0,0,160,160);
     p.thumbBlob=await new Promise(r=>t.toBlob(r,'image/jpeg',.7));t.width=t.height=0;p.thumb=URL.createObjectURL(p.thumbBlob);p.rot=0}
   const c=document.createElement('canvas');c.width=c.height=96;const bx=c.getContext('2d',{willReadFrequently:true});bx.imageSmoothingQuality='high';bx.drawImage(bm,0,0,96,96);
@@ -229,16 +233,18 @@ const within=(p,ms,v)=>Promise.race([p,new Promise(r=>setTimeout(()=>r(v),ms))])
 const ham=(a,b)=>{let n=0;for(let i=0;i<64;i++)if(a[i]!==b[i])n++;return n};
 const km=(a,b,c,d)=>{const r=Math.PI/180,x=Math.sin((c-a)*r/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin((d-b)*r/2)**2;return 12742*Math.asin(Math.sqrt(x))};
 
+let pickGen=0,lastStep=0,hangs=0;const tick=r=>{if(r==='TO'){if(++hangs>=3)lastStep=0}else{hangs=0;lastStep=Date.now()}};
 const onPick=async e=>{
-  const fs=[...e.target.files];if(!fs.length)return;e.target.value='';
+  const fs=[...e.target.files];if(!fs.length)return;e.target.value='';const my=++pickGen;tick();$('stuck').hidden=true;
+  photos.forEach(p=>{if(p.file&&!fs.includes(p.file))p.file=null});bigCache.forEach(u=>URL.revokeObjectURL(u));bigCache.clear();
   $('prog').hidden=false;$('progt').textContent=`Reading ${fs.length} item${fs.length===1?'':'s'}…`;$('progb').style.width='2%';poolErr=null;let done=0;const fresh=[],again=[];
   await pool(fs,8,async f=>{
     const isV=/^video\//.test(f.type)||/\.(mov|mp4|m4v|3gp)$/i.test(f.name),isJ=!isV&&(f.type==='image/jpeg'||/\.jpe?g$/i.test(f.name));let ex={},buf=null;
-    if(isJ){buf=await f.slice(0,131072).arrayBuffer();ex=exif(buf)}
+    if(isJ){buf=await within(f.slice(0,131072).arrayBuffer(),15000,null);ex=buf?exif(buf):{};tick(buf?0:'TO')}
     if(isV){const vm=await within(vmeta(f),4000,{});ex={lat:vm.lat,lon:vm.lon,vdate:vm.date,dur:vm.dur}}
     const date=ex.vdate||parseD(ex.date)||new Date(f.lastModified),key=f.name+'|'+(+date);
     const old=byKey.get(key);
-    if(old){old.file=f;again.push(old)}
+    if(old){old.file=f;if(!old.thumbBlob&&buf&&ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){old.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});old.thumb=URL.createObjectURL(old.thumbBlob);old.thumbBad=false;old.rot=ex.rot||0;touch(old)}again.push(old)}
     else{
       const p={id:nid++,key,file:f,name:f.name,date,lat:ex.lat,lon:ex.lon,make:ex.make,shot:f.type==='image/png'&&!ex.make,why:[],rot:ex.rot||0,dec:null,saved:0,gone:0,video:isV,dur:ex.dur||0};
       if(buf&&ex.th&&ex.th[0]+ex.th[1]<=buf.byteLength){p.thumbBlob=new Blob([buf.slice(ex.th[0],ex.th[0]+ex.th[1])],{type:'image/jpeg'});p.thumb=URL.createObjectURL(p.thumbBlob)}
@@ -256,16 +262,18 @@ const onPick=async e=>{
   render();const deckOn=$('deck').classList.contains('on');if(deckOn)show();const first=hit[0];if(first&&!deckOn)setTimeout(()=>jump(first.id),150);
   toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
     `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
-  const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
+  if(my!==pickGen)return;const todo=[...fresh,...again.filter(p=>!p.hash||!p.thumbBlob)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
   const quick=todo.filter(p=>p.thumbBlob&&!p.video),slow=todo.filter(p=>!(p.thumbBlob&&!p.video));
-  const step=async p=>{await analyse(p);n++;
+  const step=async p=>{if(my!==pickGen)return;tick(await within(analyse(p).catch(()=>{}),15000,'TO'));n++;
     const im=document.querySelector(`img[data-id="${p.id}"]`);if(im&&im.getAttribute('src')!==p.thumb){im.src=p.thumb;im.style.transform=ROT[p.rot]||'none'}
     if(n%20===0||n===todo.length){$('progt').textContent=`Groups are ready. Checking for blurry and similar photos: ${n} of ${todo.length}`;$('progb').style.width=(n/todo.length*100)+'%'}};
   await pool(quick,4,step);await pool(slow,1,step);flag();
   const bigs=[...fresh,...again].filter(p=>!p.video&&!p.big&&p.file).sort((a,b)=>(b.why.length>0)-(a.why.length>0));let m=0;
-  await pool(bigs,1,async p=>{await mkBig(p);m++;if(m%10===0||m===bigs.length){$('progt').textContent=`Making sharp copies for Review: ${m} of ${bigs.length}`;$('progb').style.width=(m/bigs.length*100)+'%'}});
-  $('prog').hidden=true;flag();render();store();
+  await pool(bigs,1,async p=>{if(my!==pickGen)return;tick(await within(mkBig(p).catch(()=>{}),20000,'TO'));m++;if(m%10===0||m===bigs.length){$('progt').textContent=`Making sharp copies for Review: ${m} of ${bigs.length}`;$('progb').style.width=(m/bigs.length*100)+'%'}});
+  if(my!==pickGen)return;$('prog').hidden=true;flag();render();store();if($('deck').classList.contains('on'))show();
 };
+setInterval(()=>{if($('prog').hidden||$('progt').textContent.startsWith('Waiting')||$('progt').textContent.startsWith('Still waiting'))return;if(Date.now()-lastStep>45000){pickGen++;if($('deck').classList.contains('on'))$('bclose').click();$('prog').hidden=true;$('stuck').hidden=false;flush()}},5000);
+$('stuckgo').onclick=()=>{flush().finally(()=>location.reload())};
 $('files').addEventListener('change',onPick);$('vfiles').addEventListener('change',onPick);
 ['files','vfiles'].forEach(id=>$(id).addEventListener('click',()=>{$('prog').hidden=false;$('progt').textContent=id==='vfiles'?'Waiting for your iPhone to prepare the videos… (long videos can take a minute)':'Waiting for the photos you pick…';$('progb').style.width='0';setTimeout(()=>{if($('progt').textContent.startsWith('Waiting'))$('prog').hidden=true},180000)}));
 ['files','vfiles'].forEach(id=>$(id).addEventListener('cancel',e=>{const inp=e.target;setTimeout(()=>{if(inp.files&&inp.files.length){onPick({target:inp});return}
@@ -492,6 +500,9 @@ $('bwrong').onclick=()=>{const p=deck[di];if(!p)return;const g=groupOf(p);$('wro
 $('wrongto').onchange=e=>{const v=e.target.value,p=deck[di];if(!v||!p)return;sel.clear();sel.add(p);
   if(v==='u')$('moveout').click();else if(v==='n')$('movenew').click();else moveSel(trips[+v]);
   const g=groupOf(p);toast(`Moved to "${g?g.name:''}"`);di++;show()};
+document.addEventListener('error',e=>{const im=e.target;if(!im||im.tagName!=='IMG')return;
+  if(im.dataset.id){const p=byId.get(+im.dataset.id);im.removeAttribute('src');im.src=BLANK;if(p&&p.thumb&&!p.thumbBad){p.thumbBad=true;p.thumb=null;p.thumbBlob=null;touch(p);store()}return}
+  if(im.classList.contains('bigimg')){const p=deck[di];if(p&&!p.file&&p.big){p.big=false;touch(p);store();bigCache.delete(p.key);show()}}},true);
 $('sharpbar').addEventListener('click',e=>{if(e.target.id==='bsharp')$('files').click()});
 $('bkeep').onclick=()=>decide('keep');$('bdel').onclick=()=>decide('del');
 $('bundo').onclick=()=>{if(!hist.length)return;di=hist.pop();const p=deck[di];p.dec=null;touch(p);store();show()};
