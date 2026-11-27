@@ -53,6 +53,7 @@ select{font:16px Outfit,system-ui;min-height:44px;border-radius:12px;border:1px 
 .dtop,.dbot{position:absolute;left:0;right:0;z-index:2;padding:10px 12px;pointer-events:none}.dtop *,.dbot *{pointer-events:auto}
 .dtop{top:0;padding-top:max(10px,env(safe-area-inset-top));background:linear-gradient(rgba(0,0,0,.75),rgba(0,0,0,0))}
 .dtop .row{display:flex;gap:8px;align-items:center;margin:0}.dtop select{flex:1;min-width:0;margin:0}
+#sharpbar{margin-top:8px;display:none;gap:8px;align-items:center;flex-wrap:wrap;font-size:13px;background:rgba(0,0,0,.55);padding:8px 10px;border-radius:12px}#sharpbar.on{display:flex}#sharpbar button{min-height:38px;background:var(--keep);color:#fff;border:0}
 #deckt{margin-top:6px;font-size:13px;color:#e6f3f1;text-shadow:0 1px 3px #000}
 .dbot{bottom:0;padding-bottom:max(14px,env(safe-area-inset-bottom));background:linear-gradient(rgba(0,0,0,0),rgba(0,0,0,.8));display:flex;flex-direction:column;align-items:center;gap:10px}
 .dbot .small{display:flex;gap:10px}.dbot .small button{background:rgba(255,255,255,.18);color:#fff;border:0;min-height:40px;backdrop-filter:blur(6px)}
@@ -91,7 +92,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 <label>Counts as a trip beyond (miles from home)<input id="miles" type="number" value="5" min="1"></label>
 <label>Occasion near home: at least this many photos in one day<input id="occ" type="number" value="15" min="3"></label>
 <label>Start a new trip after this many hours with no photos<input id="gap" type="number" value="72" min="6"></label>
-</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 10</div>
+</div><div class="row"><button id="regroup">Regroup</button><button id="chhome">Change home</button><button id="reset" style="color:var(--coral)">Start over</button></div></details><div class="mute" style="text-align:center;font-size:12px;margin:8px 0">Version 11</div>
 <section id="homepick" class="trip" hidden></section>
 <nav class="tabs" id="tabs" hidden><button id="tabG" aria-selected="true">Groups</button><button id="tabR">Review</button></nav>
 <div id="summary" class="mute"></div><div class="mute" id="hint" hidden>Photo in the wrong group? Tap it (and any others), then pick where it belongs. Use "Merge into…" to combine whole groups. Swipe left in Review to send a photo to To delete.</div>
@@ -99,7 +100,7 @@ button.link{border:0;background:none;color:var(--mute);text-decoration:underline
 </main>
 <div id="deck" role="dialog" aria-label="Review photos">
 <div class="cardwrap" id="cw"></div>
-<div class="dtop"><div class="row"><select id="scope" aria-label="What to review"></select><button id="bclose">Done</button></div><div id="deckt"></div></div>
+<div class="dtop"><div class="row"><select id="scope" aria-label="What to review"></select><button id="bclose">Done</button></div><div id="deckt"></div><div id="sharpbar"></div></div>
 <div class="dbot"><div id="wrong"><select id="wrongto" aria-label="Move this photo to"></select></div>
 <div class="small"><button id="bundo">Undo</button><button id="bwrong">Wrong group</button></div>
 <div class="deckbtns"><button class="del-b" id="bdel">Delete</button><button class="keep-b" id="bkeep">Keep</button></div></div>
@@ -252,7 +253,7 @@ const onPick=async e=>{
   lastAdded=new Set(fresh);const hit=trips.filter(t=>t.list.some(p=>lastAdded.has(p)));
   $('added').hidden=false;$('added').innerHTML=!fresh.length?`<b>Nothing new.</b> <span class="mute">All of these (${cnt(again)}) were already here.</span>`:
     `<b>Added ${cnt(fresh)}</b><div class="mute">They're marked with an orange ring in: </div><div class="row">${hit.map(t=>`<button class="chip" data-jump="${t.id}">${esc(t.name)} (+${t.list.filter(p=>lastAdded.has(p)).length})</button>`).join('')}<button class="link" data-x="1">Hide</button></div>`;
-  render();const first=hit[0];if(first)setTimeout(()=>jump(first.id),150);
+  render();const deckOn=$('deck').classList.contains('on');if(deckOn)show();const first=hit[0];if(first&&!deckOn)setTimeout(()=>jump(first.id),150);
   toast(!fresh.length?`All of these (${cnt(again)}) were already here. Your groups are unchanged.`:
     `Added ${cnt(fresh)}`+(again.length?` (${again.length} were already here)`:'')+(grew?`. ${grew} existing group${grew===1?'':'s'} got new photos`:'')+(made?`. ${made} new group${made===1?'':'s'}`:'')+'.');
   const todo=[...fresh,...again.filter(p=>!p.hash)];let n=0;$('progt').textContent='Groups are ready. Making previews and checking for blurry and similar photos in the background…';
@@ -470,8 +471,12 @@ function openDeck(sc){const need=needCount(),open=trips.map((t,i)=>[t,i]).filter
 $('scope').onchange=e=>openDeck(e.target.value);
 function show(){
   $('wrong').classList.remove('on');
-  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file||p.big||p.video?'':' · small preview only (add this photo again for a sharp view)'):'All done here. Pick another set above, or tap Done.';
+  const p=deck[di],g=p&&groupOf(p);$('deckt').textContent=p?`${di+1} of ${deck.length} · in "${g?g.name:''}" · right keeps, left goes to To delete`+(p.file||p.big||p.video?'':''):'All done here. Pick another set above, or tap Done.';
   $('cw').innerHTML=p?`<div class="sw" id="sw">${p.video&&p.file?`<video src="${URL.createObjectURL(p.file)}" controls playsinline muted preload="metadata"></video>`:`<img src="${p.thumb||BLANK}" alt="" style="transform:${ROT[p.rot]||'none'}">${p.video?'':`<img class="bigimg" alt="Photo to review">`}`}<span class="stamp k">KEEP</span><span class="stamp d">DELETE</span>${(w=>w.length?`<span class="why">${esc(w.join(' · '))}</span>`:'')(g&&g.name==='Unsorted'?['Unsorted: tap Move to group',...p.why]:p.why)}</div>`:'';
+  const fuzzy=deck.filter(q=>!q.file&&!q.big&&!q.video&&!q.gone);
+  if(fuzzy.length){const a=new Date(Math.min(...fuzzy.map(q=>+q.date))),b=new Date(Math.max(...fuzzy.map(q=>+q.date)));
+    $('sharpbar').innerHTML=`<span>${fuzzy.length===deck.length?'These photos':fuzzy.length+' of these photos'} were added before sharp copies existed, so they look blurry. Pick them once more (${esc(range(a,b))}) and they turn sharp. Your groups and choices stay.</span><button id="bsharp">Make them sharp</button>`;$('sharpbar').classList.add('on')}
+  else $('sharpbar').classList.remove('on');
   if(p){drag($('sw'));const me=di;bigSrc(p).then(u=>{const im=document.querySelector('#sw .bigimg');if(!u||me!==di||!im)return;im.onload=()=>im.classList.add('ok');im.src=u});preload(deck[di+1]);preload(deck[di+2])}
   $('bwrong').textContent=g&&g.name==='Unsorted'?'Move to group':'Wrong group';if(g&&g.name==='Unsorted')$('bwrong').click();
 }
@@ -487,6 +492,7 @@ $('bwrong').onclick=()=>{const p=deck[di];if(!p)return;const g=groupOf(p);$('wro
 $('wrongto').onchange=e=>{const v=e.target.value,p=deck[di];if(!v||!p)return;sel.clear();sel.add(p);
   if(v==='u')$('moveout').click();else if(v==='n')$('movenew').click();else moveSel(trips[+v]);
   const g=groupOf(p);toast(`Moved to "${g?g.name:''}"`);di++;show()};
+$('sharpbar').addEventListener('click',e=>{if(e.target.id==='bsharp')$('files').click()});
 $('bkeep').onclick=()=>decide('keep');$('bdel').onclick=()=>decide('del');
 $('bundo').onclick=()=>{if(!hist.length)return;di=hist.pop();const p=deck[di];p.dec=null;touch(p);store();show()};
 $('bclose').onclick=()=>{$('deck').classList.remove('on');$('tabG').setAttribute('aria-selected','true');$('tabR').setAttribute('aria-selected','false');render();const n=binList().length;if(n)toast(`${n} photo${n===1?' is':'s are'} in To delete at the top. Delete them whenever you like.`)};
